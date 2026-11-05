@@ -1,5 +1,10 @@
 module Slopgrid.Number
 
+(* Native floating-point numbers carry budget amounts and catalog prices.
+   Parsing may produce NaN or infinity. Callers must check finiteness before
+   constructing the checked number types below. F* assumes these operations
+   follow their native contracts. It does not prove provider pricing. *)
+
 new
 val scalar : Type0
 
@@ -21,7 +26,8 @@ val to_nat : scalar -> Tot (option nat)
 
 val from_nat : nat -> Tot scalar
 
-(* Trusted constant contract: the native zero scalar is finite. *)
+(* Budget and price checks compare against this native zero. F* assumes that
+   zero is finite. *)
 val zero : n: scalar { is_finite n }
 
 let finite = n: scalar { is_finite n }
@@ -30,6 +36,6 @@ let positive = n: finite { lt zero n }
 
 let nonnegative = n: finite { not (lt n zero) }
 
-(* Trusted numeric contract: converting a positive integer within this bound
-   produces a finite, strictly positive native scalar. *)
+(* Native code promises a finite positive result for small positive integers.
+   There is no such promise here for conversion of an unbounded natural. *)
 val small_positive : n: pos { n <= 2147483647 } -> Tot positive

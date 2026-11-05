@@ -1,5 +1,10 @@
 module Slopgrid.PolicyCompatibility
 
+(* Check each cell after selecting its owned values and expanding its input.
+   Required image input and judge capabilities block admission, even when
+   unverified. Effort and image-setting conflicts remain advisory.
+   PRODUCT.md 3.4.1 and 3.4.7. *)
+
 module Domain = Slopgrid.Domain
 open Slopgrid.Domain
 module List = FStar.List.Tot.Base
@@ -30,6 +35,9 @@ let moving_alias (id: string) : Tot bool =
   in
   Native.starts_with id "~" || latest (Native.length id) 0
 
+(* Follow published alias targets before capability checks. Stop on a cycle or
+   an unresolved moving alias rather than checking a different model by guess.
+   This lookup does not rewrite the submitted model selection. *)
 let resolve_model (catalog: list Domain.catalog_model) (original: string)
   : Tot (option Domain.catalog_model & option string) =
   let fail id =
@@ -62,6 +70,9 @@ let effort_label (effort: Domain.effort) : Tot string =
   else if effort = Domain.NoEffort then "None"
   else PolicyBase.effort_key effort
 
+(* Model default requests no effort override, including when metadata is absent.
+   Missing support information for an explicit effort produces an advisory
+   unknown result, not a new prohibition. PRODUCT.md 3.4.4 and 3.4.7. *)
 let effort_support (model: option Domain.catalog_model) (effort: Domain.effort)
   : Tot PolicyImages.support_state =
   match model with
@@ -93,6 +104,9 @@ let issue (cell: Domain.preview_cell) (origins: list Domain.origin)
     reason = reason
   }
 
+(* Blame a field only when its images occur in the consumed message or rubric.
+   An unused image-bearing field must not require generator vision or receive
+   an unrelated attachment conflict. PRODUCT.md 3.4.2 and 3.4.7. *)
 let variable_image_origins (text: string) (g: Domain.layout) (cell: Domain.preview_cell)
   (consumed: list string) : Tot (list Domain.origin) =
   PolicyBase.unique
@@ -111,6 +125,10 @@ let variable_image_origins (text: string) (g: Domain.layout) (cell: Domain.previ
           }])
       (PolicyVariables.references text g cell.cell_row cell.cell_column))
 
+(* Inspect all supplied messages, including turns after an unfilled reply.
+   Use expanded attachments to count consumed images, but raw templates to
+   find the message and variable controls that supplied them. Judge criteria
+   are deliberately absent from this generator context. PRODUCT.md 3.4.7. *)
 let generator_context (g: Domain.layout) (cell: Domain.preview_cell)
   : Tot (list string & list Domain.origin) =
   let messages = PolicyBase.option_list cell.messages in
@@ -173,6 +191,10 @@ let effort_issues (g: Domain.layout) (cell: Domain.preview_cell)
       [PolicyBase.origin g cell model_parameter; PolicyBase.origin g cell effort_parameter]
       support false reason []]
 
+(* A judge must have verified text and structured-output support.
+   It also needs vision for SVG or Image output, or for images in the generator
+   context or its own rubric. This is setup eligibility, not judge execution.
+   PRODUCT.md 3.8.5. *)
 let judge_model_issue (judge: option Domain.catalog_model) (format: Domain.format) (images: bool)
   : Tot (option string) =
   if format = Domain.Html then Some "Websites do not support a judge yet."
@@ -200,6 +222,9 @@ let cell_issues (g: Domain.layout) (catalog: list Domain.catalog_model) (cell: D
       [issue cell [PolicyBase.origin g cell Domain.PModel] PolicyImages.Unknown true reason []]
     | None ->
       if model_id = "" then []
+      (* Unknown ordinary model metadata is not itself a blocker. Consumed
+         images change that: generation needs verified image-input support.
+         No pricing or token-budget calculation happens here. PRODUCT.md 3.4.7. *)
       else
         (if consumed <> [] &&
            (match model with
@@ -233,6 +258,9 @@ let cell_issues (g: Domain.layout) (catalog: list Domain.catalog_model) (cell: D
         List.map
           (fun conflict ->
             let parameters = conflict.PolicyImages.parameters in
+            (* Attribute a combination failure only to settings in that
+               conflict. An image-count conflict follows the actual message
+               and field attachments, not every input control. PRODUCT.md 3.4.6. *)
             let origins =
               (if conflict.PolicyImages.model_dependent then
                  [PolicyBase.origin g cell Domain.PModel]
@@ -262,6 +290,9 @@ let cell_issues (g: Domain.layout) (catalog: list Domain.catalog_model) (cell: D
         | Some reason ->
           [issue cell [PolicyBase.origin g cell Domain.PJudgeModel] PolicyImages.Unknown true reason []]
         | None ->
+          (* Criterion images belong to the judge, never to the generator.
+             The judge also receives generator context, so either source can
+             require its image-input capability. PRODUCT.md 3.3.5 and 3.8.5. *)
           let _, criterion_images = PolicyVariables.resolve_criteria g cell.cell_row cell.cell_column in
           let criterion_ids = List.map (fun image -> image.Domain.reference_id) criterion_images in
           (match judge_model_issue judge format (consumed <> [] || criterion_ids <> []) with
@@ -301,6 +332,10 @@ let cell_issues (g: Domain.layout) (catalog: list Domain.catalog_model) (cell: D
   in
   model_issues @ image_issues @ judge_issues
 
+(* These cells describe resolved combinations used for setup feedback.
+   Calling this on a completed layout checks its actual intersections. The
+   form may supply an editing preview while a dimension is still empty.
+   PRODUCT.md 3.4.1 and 3.4.2. *)
 let analyze (g: Domain.layout) (budget: option Number.finite) (catalog: list Domain.catalog_model)
   : Tot (list Domain.preview_cell & list Domain.compatibility_issue) =
   let cells = PolicyVariables.expand_grid g budget in

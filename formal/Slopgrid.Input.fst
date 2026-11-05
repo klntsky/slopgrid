@@ -1,5 +1,9 @@
 module Slopgrid.Input
 
+(* These are pure edits to the creation form, not generation or browser storage.
+   A case is a row or column configuration. Its complete prompt or Chat history
+   can still refer to variables on the opposite axis. PRODUCT.md 3.3.2 and 3.3.9. *)
+
 module Domain = Slopgrid.Domain
 module List = FStar.List.Tot.Base
 module Native = Slopgrid.Native
@@ -95,6 +99,10 @@ let add_case_axis (input: layout) (side: axis) : Tot layout =
         if owner = side then OneCaseAxis owner else BothCaseAxes owner
       | BothCaseAxes first -> BothCaseAxes first}
 
+(* Removing the final image can leave either None or Some [] in an editor.
+   Compare them as the same empty attachment list when returning inputs to
+   common, rather than asking to discard otherwise identical histories.
+   PRODUCT.md 3.3.9. *)
 let normalize_messages (messages: list message) : Tot (list message) =
   List.map
     (fun message ->
@@ -149,6 +157,9 @@ let rec available_id (fuel: nat) (ids: list string) (prefix: string) (counter: n
   if member id ids && fuel > 0 then available_id (fuel - 1) ids prefix (counter + 1)
   else (id, counter + 1)
 
+(* Allocate against both axes and any IDs reserved by the current edit.
+   Creating a replacement case must not reuse an ID that the caller still
+   associates with the old case. This creates an unnamed record, not a copy. *)
 let new_case (input: layout) (allocation: string & list string) (counter: nat)
   (values: case_values) : Tot (case_record & nat) =
   let prefix, reserved = allocation in
@@ -156,6 +167,9 @@ let new_case (input: layout) (allocation: string & list string) (counter: nat)
   let id, next = available_id (List.length ids + 1) ids prefix counter in
   ({case_id = id; case_name = None; values = values}, next)
 
+(* An ordinary axis with no parameter represents one position, not zero outputs.
+   Keep the first ID when possible, but remove its old name and values. Active
+   case dimensions keep their explicit cases instead. PRODUCT.md 3.1.10. *)
 let neutral_dimension (input: layout) (side: axis) allocation counter =
   if Parameters.is_case_axis input side
     || List.length (Parameters.axis_parameters input side) > 0
@@ -187,6 +201,10 @@ let differing (input: layout) (p: common_parameter) : Tot bool =
        differs_from p (Parameters.get_case_value first.values p) (entries input side))
   | _ -> false
 
+(* Return one case-owned setting to its common control. Keep its value only
+   when every case agrees, including whether a value is present. Otherwise
+   restore the normal default. The caller handles loss confirmation before
+   accepting this edit. PRODUCT.md 3.1.10 and 3.8.9. *)
 let collapse (input: layout) (p: common_parameter) allocation counter =
   match Parameters.get_source input.parameters p with
   | Some (OnAxis side) ->
@@ -200,6 +218,8 @@ let collapse (input: layout) (p: common_parameter) allocation counter =
            | None -> Parameters.parameter_default p
            | Some value -> value)
     in
+    (* Replace ownership and remove the old per-case values together. The order
+       list only places the returned setting among the common controls. *)
     let next = set_source input p (Common value) in
     let next = {next with
       parameters = {next.parameters with
@@ -265,6 +285,10 @@ let variable_fields (input: layout) (side: axis) : Tot (list (option variable_fi
   | None -> []
   | Some entry -> option_list entry.values.variable_value
 
+(* When no case can be copied, initialize every setting owned by this axis.
+   Keep variable slots, including deleted slots, but start active fields empty.
+   Rubrics use the normal default rather than another case's questions.
+   PRODUCT.md 3.1.10 and 3.8.9. *)
 let case_defaults (input: layout) (side: axis) : Tot case_values =
   fold
     (fun values p ->
@@ -280,6 +304,10 @@ let case_defaults (input: layout) (side: axis) : Tot case_values =
          else Parameters.parameter_default p))
     Parameters.empty_case_values (Parameters.axis_parameters input side)
 
+(* Defining a common setting in cases copies its complete value into every
+   destination case, including message images or rubric answers. An empty
+   axis gets an initial case here. Destination availability belongs to the
+   caller's action checks. PRODUCT.md 3.1.10, 3.3.9, and 3.8.9. *)
 let own_value (input: layout) (p: common_parameter) (side: axis) (value: value_for p)
   allocation counter =
   let values, count =
@@ -306,6 +334,9 @@ let collapse_parameters (input: layout) (parameters: list parameter) allocation 
       if p = PVariable then (current, count) else collapse current p allocation count)
     (input, counter) parameters
 
+(* A missing custom name means the slot's default name, not an unnamed field.
+   Slot zero is ROW1 or COLUMN1. Deleting another slot must not renumber it.
+   PRODUCT.md 3.3.1 and 3.3.4. *)
 let generated_name (side: axis) (index: nat) : Tot string =
   cat (if side = Rows then "ROW" else "COLUMN") (Native.nat_string (index + 1))
 
@@ -336,6 +367,10 @@ let rec token_length (fuel: nat) (text: string) (position: nat)
   if fuel = 0 || not (ascii_token_byte (Native.byte_at text position)) then 0
   else 1 + token_length (fuel - 1) text (position + 1)
 
+(* Scan the whole name after '$' before deciding whether it is a reference.
+   For example, $ROW10 is not $ROW1 followed by 0, and $ROW1suffix stays literal.
+   The Unicode boundary check also keeps a Latin token prefix from consuming
+   the start of a longer non-ASCII word. PRODUCT.md 3.3.4. *)
 let token_at (text: string) (position: nat) : Tot (option (string & nat)) =
   if Native.byte_at text position <> 36 then None
   else
@@ -345,6 +380,9 @@ let token_at (text: string) (position: nat) : Tot (option (string & nat)) =
     then None
     else Some (Native.slice text (position + 1) count, count + 1)
 
+(* Read only the original template while rewriting names. Replacement text
+   never goes back through this scanner, so a swap cannot rename its own
+   output a second time. PRODUCT.md 3.3.2 and 3.3.7. *)
 let rec rewrite_scan (fuel: nat) (rename: string -> Tot string) (text: string)
   (position: nat) : Tot string (decreases fuel) =
   if fuel = 0 || position >= Native.length text then ""
@@ -367,6 +405,10 @@ let rec token_scan (fuel: nat) (text: string) (position: nat)
 
 let variable_tokens text = token_scan (Native.length text) text 0
 
+(* Rename references in generator and judge templates, not in variable values.
+   A field containing literal "$ROW1" keeps that text even when ROW1 is renamed.
+   Images and expected rubric answers stay with their records.
+   PRODUCT.md 3.3.2. *)
 let rewrite_value (rename: string -> Tot string) (value: value)
   : Tot (value_for (value_parameter value)) =
   match value with
@@ -433,6 +475,9 @@ let rewrite_sources (rename: string -> Tot string) (sources: parameter_sources)
        | Some (Common value) -> Some (Common (rewrite_value rename value))
        | other -> other)}
 
+(* Visit both common and case-owned templates. Row ownership of a prompt does
+   not mean that its references are row-only. It may contain $COLUMN1 too.
+   PRODUCT.md 3.3.2. *)
 let rewrite_references (input: layout) (rename: string -> Tot string)
   : Tot (result: layout{
       List.length result.rows = List.length input.rows
@@ -495,6 +540,9 @@ let rec fill_to #a (count: nat) (values: list (option a))
     | [] -> None :: fill_to (count - 1) []
     | value :: rest -> value :: fill_to (count - 1) rest
 
+(* Custom-name lists may omit their unused tail. Pad up to the edited slot
+   before writing, then remove only trailing absent names. Interior gaps still
+   mean that those slots use their default names. *)
 let set_variable_name input side index name =
   let names =
     trim_null_end
@@ -505,6 +553,10 @@ let set_variable_name input side index name =
 let valid_variable_name name =
   Native.length name > 0 && token_length (Native.length name) name 0 = Native.length name
 
+(* Clearing a header requests its default token, which may already be another
+   field's custom name. Reject that collision just like an explicit duplicate.
+   This check expects names already normalized to uppercase.
+   PRODUCT.md 3.3.2. *)
 let variable_rename_valid input side index name =
   (name = "" || valid_variable_name name) &&
   (let effective = if name = "" then generated_name side index else name in
@@ -523,6 +575,10 @@ let unused_generated_name side index used =
 
 let empty_message : message = {message_role = UserRole; content = ""; images = None}
 
+(* Prompt edits keep one user message and retain its untouched text or images.
+   Chat edits instead move or remove complete messages, so attachments travel
+   with the message rather than its old list position.
+   PRODUCT.md 1.1.3 and 3.3.9. *)
 let edit_messages (messages: list message) (edit: message_edit) : Tot (list message) =
   let first =
     match at messages 0 with
@@ -543,6 +599,8 @@ let edit_messages (messages: list message) (edit: message_edit) : Tot (list mess
       message_role = UserRole;
       images = Some (remove_at (option_list first.images) index)}]
   | InsertMessage index ->
+    (* A blank after a user message invites the model's reply. Other insertion
+       positions start with supplied user text. PRODUCT.md 1.1.3. *)
     let previous = if index = 0 then None else at messages (index - 1) in
     insert_at messages index
       {empty_message with
@@ -571,6 +629,10 @@ let edit_messages (messages: list message) (edit: message_edit) : Tot (list mess
                 | Some images -> Some (remove_at images image_index)}
           else message
         | CycleRole index remembered ->
+          (* Attached images keep this message in its current role until the
+             user removes them. Entering unfilled clears the stored body.
+             Leaving it restores text passed from the open editor's memory,
+             without trimming whitespace. PRODUCT.md 1.1.3. *)
           if i <> index || List.length (option_list message.images) > 0 then message
           else
             let role =
@@ -592,6 +654,10 @@ let edit_messages (messages: list message) (edit: message_edit) : Tot (list mess
         | _ -> message)
       messages
 
+(* Decide which settings need a loss warning before applying a dimension edit.
+   Equal case settings can return to common without loss, but numbered fields
+   have no common editor, so even one populated field needs confirmation.
+   PRODUCT.md 3.1.10. *)
 let dropped_parameters (input: layout) (action: input_action) : Tot (list parameter) =
   let removed : list parameter =
     match action with
@@ -627,6 +693,9 @@ let rec join (separator: string) (values: list string) : Tot string =
   | [value] -> value
   | value :: rest -> cat value (cat separator (join separator rest))
 
+(* This produces the warning text, not a dialog or an accepted edit. The
+   confirmation flow must leave the original layout untouched on cancellation.
+   PRODUCT.md 3.1.10. *)
 let confirmation (input: layout) (action: input_action) : Tot (option string) =
   let dropped = dropped_parameters input action in
   if List.length dropped = 0 then None
@@ -645,6 +714,9 @@ let confirmation (input: layout) (action: input_action) : Tot (option string) =
                  (cat (join ", " (List.map Parameters.parameter_name restored))
                    " will return to their common defaults.")))))
 
+(* For an ordinary selector, reuse records whose selected value survives first.
+   Consume each match once so duplicate selections cannot share one record.
+   fill_values then reuses unmatched records or allocates new ones. *)
 let rec take_match (p: parameter) (value: value_for p) (values: list case_record)
   : Tot (option case_record & list case_record) =
   match values with
@@ -777,11 +849,18 @@ let custom_names_on (input: layout) (side: axis) : Tot (list string) =
 let custom_variable_names (input: layout) : Tot (list string) =
   List.append (custom_names_on input Rows) (custom_names_on input Columns)
 
+(* Default ROW/COLUMN names normally exchange prefixes. An explicit custom name
+   takes priority, even if it looks numbered. If COLUMN1 is custom, a default
+   ROW1 keeps the name ROW1 instead of stealing that binding on transpose.
+   PRODUCT.md 3.3.7. *)
 let swap_rename (input: layout) (name: string) : Tot string =
   let swapped = swap_numeric_name name in
   let custom = custom_variable_names input in
   if member name custom || member swapped custom then name else swapped
 
+(* Store a retained numbered name explicitly when it no longer matches the
+   destination slot's default. Keep an existing explicit name explicit even
+   when it happens to match that default. PRODUCT.md 3.3.7. *)
 let swapped_name_entry (input: layout) (side: axis) (index: nat) (custom: option string)
   : Tot (option string) =
   match at (variable_fields input side) index with
@@ -799,6 +878,10 @@ let swap_name_fields (input: layout) (side: axis) : Tot (option (list (option st
     let names = trim_null_end names in
     if names = [] then None else Some names
 
+(* Compute names against the original layout, rewrite template references once,
+   then exchange whole case records and their parameter owners. The scanner
+   also rewrites unresolved numbered references. Field text is never rewritten.
+   PRODUCT.md 3.1.12 and 3.3.7. *)
 let swap (input: layout)
   : Tot (result: layout{
       List.length result.rows = List.length input.columns
@@ -829,6 +912,9 @@ let source_on_axis (input: layout) (p: parameter) (side: axis) : Tot bool =
     | Some (OnAxis owner) -> owner = side
     | _ -> false
 
+(* Apply one form action. Ownership checks reject edits aimed at an inactive
+   common control or the wrong case table. This function does not run model
+   requests or display the caller's loss-confirmation dialog. *)
 let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat)
   : Tot (layout & nat) =
   let allocation = (prefix, case_ids input) in
@@ -873,11 +959,17 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
              (entries input side)), counter)
      | _ -> (input, counter))
   | SetCommon value ->
+    (* Judge criteria arrive as a complete rubric value, including each YES/NO
+       answer. Replacing the common value cannot edit an inactive common rubric
+       while row or column cases own it. PRODUCT.md 3.8.9. *)
     let p = value_parameter value in
     ((match Parameters.get_source input.parameters p with
       | Some (Common _) -> set_source input p (Common value)
       | _ -> input), counter)
   | MoveToAxis p side ->
+    (* The form must offer a nonempty case destination before dispatching this
+       action. This branch checks case mode. own_value supplies initial values
+       if the destination list is empty. PRODUCT.md 3.1.10. *)
     if not (Parameters.is_case_axis input side) then (input, counter)
     else
       (match Parameters.get_source input.parameters p with
@@ -885,6 +977,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
        | _ -> (input, counter))
   | MoveToCommon p -> collapse input p allocation counter
   | SingleDimension side ->
+    (* Remove numbered fields without rewriting their references in templates.
+       Those references remain for validation to report, rather than silently
+       changing the prompt's meaning. PRODUCT.md 3.1.10 and 3.3.4. *)
     let next = remove_case_axis input side in
     let next, count =
       collapse_parameters next (Parameters.axis_parameters input side) allocation counter
@@ -892,6 +987,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
     neutral_dimension (strip_variables next side) side allocation count
   | SelectDimension side p ->
     if p = PVariable then
+      (* Entering Multiple cases starts one blank case with no variable fields.
+         Existing ordinary settings first return to their common controls.
+         PRODUCT.md 3.1.10 and 3.3.3. *)
       if Parameters.is_case_axis input side then (input, counter)
       else
         let next, count =
@@ -946,6 +1044,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
                in
                (set_entries next side [entry], count))
   | SetCaseValue side index value ->
+    (* The caller edits one whole case setting, including a full Chat history
+       or rubric. Other cases keep their own values and expected answers.
+       PRODUCT.md 3.3.9 and 3.8.9. *)
     let p = value_parameter value in
     if (if p = PVariable then
           not (Parameters.is_case_axis input side) || not (Parameters.axis_has_variables input side)
@@ -967,10 +1068,16 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
       let values, count = fill_values input side p allocation counter selected matches remaining in
       (set_entries input side values, count)
   | AddCase side value ->
+    (* The caller supplies the copied record with its new ID. Choosing the last
+       focused surviving case, or the final case as fallback, happens outside
+       this reducer. Append the complete copy without rebuilding its inputs or
+       rubric, and leave the opposite table alone. PRODUCT.md 3.1.10 and 3.8.9. *)
     ((if Parameters.is_case_axis input side then
         set_entries input side (List.append (entries input side) [value])
       else input), counter)
   | RemoveCase side index ->
+    (* The last case stays editable even when blank. Removing another case
+       removes all of its settings together. PRODUCT.md 3.1.10. *)
     ((if Parameters.is_case_axis input side && List.length (entries input side) > 1 then
         set_entries input side (remove_at (entries input side) index)
       else input), counter)
@@ -979,6 +1086,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
         set_entries input side (move (entries input side) index target)
       else input), counter)
   | AddVariable side ->
+    (* Append a new slot instead of filling a deletion gap. Reserve custom
+       names from both axes before choosing its default-looking token, since a
+       custom ROW3 may already exist elsewhere. PRODUCT.md 3.3.2 and 3.3.4. *)
     if not (Parameters.is_case_axis input side) || List.length (entries input side) = 0
     then (input, counter)
     else
@@ -1021,6 +1131,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
       (set_variable_name next side index
         (if name = generated_name side index then None else Some name), counter)
   | RemoveVariable side index ->
+    (* Leave a tombstone at this index. Deleting ROW2 must not turn ROW3 into
+       ROW2 or make an old $ROW2 reference refer to a newly added field.
+       Template references stay unchanged. PRODUCT.md 3.3.4. *)
     if not (Parameters.is_case_axis input side)
       || (match at (variable_fields input side) index with
           | Some (Some _) -> false
@@ -1043,6 +1156,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
           set_source current p (Common (Parameters.parameter_default p)))
         {input with judging = true} judge_parameters, counter)
     else
+      (* Turning judging off removes judge settings, not generator cases.
+         Only an ordinary axis left without a parameter becomes one neutral
+         position. PRODUCT.md 3.8.4. *)
       let next =
         fold
           (fun current p ->
@@ -1067,6 +1183,9 @@ let reduce (input: layout) (action: input_action) (prefix: string) (counter: nat
         (fun (current, count) side -> neutral_dimension current side allocation count)
         (next, counter) [Rows; Columns]
 
+(* Build format defaults with no selected generator model. The non-model axis
+   starts at Auto quality for Image or Model default effort for text formats.
+   PRODUCT.md 3.1.5. *)
 let default_grid (format: format) allocation counter : Tot (draft_input & nat) =
   let image = format = Image in
   let model_rows = image || format = Svg || format = Html in
@@ -1103,6 +1222,9 @@ let default_grid (format: format) allocation counter : Tot (draft_input & nat) =
   ({draft_layout = set_entries input (if model_rows then Columns else Rows) [entry];
     budget_text = "3"}, next)
 
+(* Ignore parameter insertion order when comparing form data. This bookkeeping
+   order differs from row, column, message, and criterion order, all of which
+   still matter and remain in the comparison. *)
 let layout_data (input: layout) : Tot layout =
   let normalize_case entry = {entry with values = {entry.values with value_order = []}} in
   {input with
@@ -1110,6 +1232,9 @@ let layout_data (input: layout) : Tot layout =
     rows = List.map normalize_case input.rows;
     columns = List.map normalize_case input.columns}
 
+(* Detect an untouched default form without depending on allocated case IDs or
+   None versus an empty attachment list. Do not ignore names, selected values,
+   or the order of cases. PRODUCT.md 3.1.12. *)
 let without_case_ids (input: layout) : Tot layout =
   let next = layout_data input in
   let normalize_case entry = {entry with
@@ -1139,6 +1264,10 @@ let without_case_ids (input: layout) : Tot layout =
 let add_dropped (dropped: list parameter) (p: parameter) : Tot (list parameter) =
   if member p dropped then dropped else List.append dropped [p]
 
+(* After changing formats, remove values whose parameter no longer belongs to
+   this axis. Keep surviving case records and names in place, and report each
+   removed nondefault setting for the shared loss confirmation.
+   PRODUCT.md 3.1.12. *)
 let strip_format_cases (input: layout) (side: axis) (dropped: list parameter)
   : Tot (layout & list parameter) =
   let cases, dropped =
@@ -1170,6 +1299,10 @@ let rec find_model (models: list catalog_model) (id: string) : Tot (option catal
   | [] -> None
   | model :: rest -> if model.model_id = id then Some model else find_model rest id
 
+(* Format conversion only clears model choices known to be incompatible.
+   Missing catalog entries or unknown structured-output support survive this
+   preservation check. This is not the judge eligibility check required before
+   generation. PRODUCT.md 3.1.12 and 3.8.4. *)
 let format_model_compatible (models: list catalog_model) (format: format) (p: parameter)
   (id: string) : Tot bool =
   if id = "" then true
@@ -1221,6 +1354,10 @@ let convert_format_models (input: layout) models format dropped =
         (set_entries current side cases, dropped))
     (input, dropped) ([PModel; PJudgeModel] <: list common_parameter)
 
+(* Case axes may own several settings. Ordinary axes may compare only one.
+   Return extra settings to common, recording differing values as losses, and
+   leave an empty ordinary axis at one neutral position.
+   PRODUCT.md 3.1.10 and 3.1.12. *)
 let normalize_format_axes input allocation counter dropped =
   fold
     (fun (current, count, dropped) side ->
@@ -1251,11 +1388,17 @@ let normalize_format_axes input allocation counter dropped =
         (next, count, dropped))
     (input, counter, dropped) [Rows; Columns]
 
+(* A prompt is exactly one supplied user message, with or without attachments.
+   It can become a Chat history unchanged. Several messages or a different
+   role cannot fit a prompt without losing history. PRODUCT.md 3.3.9. *)
 let valid_prompt_messages (messages: list message) : Tot bool =
   match messages with
   | [message] -> message.message_role = UserRole
   | _ -> false
 
+(* Reset only incompatible complete inputs, including individual case histories.
+   Keep compatible neighboring histories and report PInput once if any reset
+   needs the caller's atomic confirmation. PRODUCT.md 3.3.9. *)
 let normalize_prompt_format (input: layout) format dropped =
   if format = ChatTemplate then (input, dropped)
   else
@@ -1280,6 +1423,10 @@ let normalize_prompt_format (input: layout) format dropped =
       in
       (set_entries input side cases, dropped)
 
+(* Compute a candidate format change and a single list of lost settings.
+   Untouched forms take the target format's defaults. Edited forms retain
+   compatible values and case records. The caller must accept this candidate
+   only after confirming all reported losses. PRODUCT.md 3.1.12. *)
 let select_format (draft: draft) (format: format) (catalog: list catalog_model)
   (prefix: string) (counter: nat) : Tot (Domain.draft & nat & list parameter) =
   let previous = draft.editable.draft_layout in

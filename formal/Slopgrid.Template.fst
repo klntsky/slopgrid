@@ -1,5 +1,10 @@
 module Slopgrid.Template
 
+(* Templates are prompt, Chat-message, or judge text split at dollar bytes.
+   Field values enter the output as literal bytes, even if they contain tokens.
+   This module models text and reference order, not image deduplication or
+   generation validation. PRODUCT.md 3.3.4 and 3.3.5. *)
+
 module Native = Slopgrid.Native
 module List = FStar.List.Tot.Base
 open Prims
@@ -26,8 +31,8 @@ let stopped (values: list byte) : Tot bool =
   | [] -> true
   | first :: _ -> not (name_byte first)
 
-(* Split off the maximal prefix of identifier-name bytes, leaving an empty tail
-   or a tail starting with a non-name byte; concatenation and lengths are preserved. *)
+(* After a dollar, read the whole uppercase name before deciding whether it is
+   a reference. This keeps ROW1 distinct from ROW10. PRODUCT.md 3.3.4. *)
 let rec span_name (values: list byte)
   : Tot (result: (list byte & list byte){
       let name, tail = result in
@@ -42,8 +47,8 @@ let rec span_name (values: list byte)
     else
       ([], values)
 
-(* Splitting at dollar bytes produces a nonempty list of dollar-free byte lists,
-   including empty parts at consecutive or boundary delimiters. *)
+(* Keep empty parts so joining can recover leading, trailing, and repeated
+   dollars. Only parts after the first can start a variable reference. *)
 let rec split_dollar (values: list byte)
   : Tot (parts: list (list byte){parts <> [] /\ List.for_all no_dollar parts}) =
   match values with
@@ -68,6 +73,10 @@ let rec map_g #a #b (f: a -> GTot b) (values: list a) : GTot (list b) =
   | [] -> []
   | first :: rest -> f first :: map_g f rest
 
+(* A lowercase or Unicode alphanumeric continuation makes the lookalike text
+   literal, as in $ROW1suffix. Unicode classification comes from Native's
+   trusted contract. This byte model does not prove that classifier correct.
+   PRODUCT.md 3.3.4. *)
 let reference_part (part: list byte) : GTot (option (identifier & list byte)) =
   let name, tail = span_name part in
   if name = [] || Native.unicode_alphanumeric_prefix tail then
@@ -90,6 +99,10 @@ let rename_template (rename: identifier -> GTot identifier) (parts: list (list b
   | [] -> []
   | literal :: references -> literal :: map_g (rename_part rename) references
 
+(* Resolve only names scanned from the original template. Append each field's
+   text without scanning it again, so a field containing "$COLUMN1" inserts
+   those bytes literally. The caller chooses the cell's input and resolver.
+   PRODUCT.md 3.3.4. *)
 let rec expand_parts (resolve: identifier -> GTot (list byte)) (parts: list (list byte))
   : GTot (list byte) =
   match parts with
@@ -112,8 +125,8 @@ let expand_template (resolve: identifier -> GTot (list byte)) (parts: list (list
   | [] -> []
   | literal :: references -> List.append literal (expand_parts resolve references)
 
-(* A prefix consisting of name bytes is exactly the span returned when its tail
-   is empty or starts with a non-name byte. *)
+(* The parser can read a renamed name followed by the old punctuation without
+   swallowing that punctuation. The stopped-tail assumption matters here. *)
 let rec span_append (name: list byte{name_bytes name}) (tail: list byte{stopped tail})
   : Lemma (span_name (List.append name tail) == (name, tail)) =
   match name with
@@ -123,8 +136,8 @@ let rec span_append (name: list byte{name_bytes name}) (tail: list byte{stopped 
      | _ :: _ -> ())
   | _ :: rest -> span_append rest tail
 
-(* Renaming leaves an unrecognized reference part unchanged. A recognized part
-   still parses as a reference to the renamed identifier with the same tail. *)
+(* A rename changes the recognized name, not the text after it. Lookalike
+   text that the parser rejected stays literal. PRODUCT.md 3.3.2. *)
 let rename_reference (rename: identifier -> GTot identifier) (part: list byte)
   : Lemma
     (ensures (match reference_part part with
@@ -137,8 +150,8 @@ let rename_reference (rename: identifier -> GTot identifier) (part: list byte)
   else
     span_append (rename name) tail
 
-(* Expanding renamed reference parts gives identical bytes when the new resolver
-   agrees with the old resolver on every renamed identifier. *)
+(* Walk the reference parts to compare expansion before and after a rename.
+   Each renamed name must still resolve to its original field text. *)
 let rec expand_renamed_parts
   (rename: identifier -> GTot identifier)
   (before: identifier -> GTot (list byte))
@@ -154,8 +167,9 @@ let rec expand_renamed_parts
     rename_reference rename part;
     expand_renamed_parts rename before after rest
 
-(* Renaming a template preserves its expanded bytes, including its literal
-   prefix, provided corresponding old and renamed identifiers resolve identically. *)
+(* A rename leaves expanded template text unchanged when the new names find
+   the same field values. The literal prefix stays byte-for-byte unchanged.
+   This is the text part of reference-preserving renames. PRODUCT.md 3.3.2. *)
 let expansion_renaming
   (rename: identifier -> GTot identifier)
   (before: identifier -> GTot (list byte))
@@ -169,21 +183,21 @@ let expansion_renaming
   | [] -> ()
   | _ :: rest -> expand_renamed_parts rename before after rest
 
-(* A list consisting entirely of identifier-name bytes contains no dollar byte. *)
+(* A valid renamed name cannot add a dollar and create another reference. *)
 let rec name_has_no_dollar (name: list byte{name_bytes name})
   : Lemma (no_dollar name) =
   match name with
   | [] -> ()
   | _ :: rest -> name_has_no_dollar rest
 
-(* Concatenating two dollar-free byte lists yields a dollar-free byte list. *)
+(* Joining a renamed name to its dollar-free tail keeps one parser part. *)
 let rec no_dollar_append (left: list byte{no_dollar left}) (right: list byte{no_dollar right})
   : Lemma (no_dollar (List.append left right)) =
   match left with
   | [] -> ()
   | _ :: rest -> no_dollar_append rest right
 
-(* Joining the dollar-separated parts of any byte list reconstructs it exactly. *)
+(* Splitting a template loses no literal bytes or dollar positions. *)
 let rec join_split (bytes: list byte)
   : Lemma (join_dollar (split_dollar bytes) == bytes) =
   match bytes with
@@ -199,8 +213,8 @@ let prepend_part (prefix: list byte) (parts: list (list byte)) : Tot (list (list
   | [] -> [prefix]
   | first :: rest -> List.append prefix first :: rest
 
-(* A dollar-free prefix merges into the first part when concatenated bytes are
-   split at dollars; the remaining split parts are unchanged. *)
+(* Literal bytes before the next dollar stay in the first parser part.
+   The later reference boundaries do not move. *)
 let rec split_prefix (prefix: list byte{no_dollar prefix}) (bytes: list byte)
   : Lemma
     (split_dollar (List.append prefix bytes) == prepend_part prefix (split_dollar bytes)) =
@@ -215,8 +229,8 @@ let rec split_prefix (prefix: list byte{no_dollar prefix}) (bytes: list byte)
     | [] -> ()
     | _ :: _ -> ()
 
-(* Splitting a joined nonempty list of dollar-free parts recovers those exact
-   parts, including any empty parts. *)
+(* Rejoining parser parts and splitting again keeps their boundaries, even
+   when consecutive dollars created empty parts. *)
 let rec split_join (parts: list (list byte){parts <> [] /\ List.for_all no_dollar parts})
   : Lemma (split_dollar (join_dollar parts) == parts) =
   match parts with
@@ -229,8 +243,8 @@ let rec split_join (parts: list (list byte){parts <> [] /\ List.for_all no_dolla
     split_join rest;
     split_prefix part (36 :: join_dollar rest)
 
-(* Renaming a reference within a dollar-free part cannot introduce dollar bytes,
-   since renamed identifiers also consist only of name bytes. *)
+(* Renaming cannot put a dollar inside a parser part. The renamed identifier
+   uses name bytes only, and the old tail already contains no dollar. *)
 let rename_no_dollar (rename: identifier -> GTot identifier) (part: list byte{no_dollar part})
   : Lemma (no_dollar (rename_part rename part)) =
   let name, tail = span_name part in
@@ -238,7 +252,7 @@ let rename_no_dollar (rename: identifier -> GTot identifier) (part: list byte{no
   | None -> ()
   | Some (name, tail) ->
     name_has_no_dollar (rename name);
-    (* A suffix of a dollar-free concatenation is itself dollar-free. *)
+    (* Text after the parsed variable name cannot hide another dollar sign. *)
     let rec suffix_no_dollar (prefix: list byte) (suffix: list byte)
       : Lemma
         (requires no_dollar (List.append prefix suffix))
@@ -250,8 +264,8 @@ let rename_no_dollar (rename: identifier -> GTot identifier) (part: list byte{no
     suffix_no_dollar name tail;
     no_dollar_append (rename name) tail
 
-(* Renaming each reference part preserves the property that every part is
-   dollar-free. *)
+(* Check every renamed reference part before rebuilding the template string.
+   None can introduce an extra dollar boundary. *)
 let rec renamed_parts_no_dollar (rename: identifier -> GTot identifier)
   (parts: list (list byte){List.for_all no_dollar parts})
   : Lemma (List.for_all no_dollar (map_g (rename_part rename) parts)) =
@@ -261,8 +275,8 @@ let rec renamed_parts_no_dollar (rename: identifier -> GTot identifier)
     rename_no_dollar rename part;
     renamed_parts_no_dollar rename rest
 
-(* Renaming a nonempty list of dollar-free template parts preserves its exact
-   representation through joining and splitting at dollars. *)
+(* Reparse the renamed string without changing its parts. The runtime rewrite
+   proof uses this to compare later expansion with the original template. *)
 let renamed_template_roundtrip (rename: identifier -> GTot identifier)
   (parts: list (list byte){parts <> [] /\ List.for_all no_dollar parts})
   : Lemma
@@ -273,8 +287,9 @@ let renamed_template_roundtrip (rename: identifier -> GTot identifier)
     renamed_parts_no_dollar rename rest;
     split_join (rename_template rename parts)
 
-(* Appending a dollar delimiter and suffix does not change whether a part starts
-   with a recognized reference or its name; only a recognized reference's tail grows. *)
+(* A later dollar cannot turn an earlier literal part into a reference or
+   change an earlier reference's name. Native supplies the Unicode delimiter
+   assumption used when the preceding tail contains non-ASCII bytes. *)
 let reference_delimited (part: list byte) (suffix: list byte)
   : Lemma
     (reference_part (List.append part (36 :: suffix)) ==
@@ -289,13 +304,17 @@ let reference_delimited (part: list byte) (suffix: list byte)
   span_append name (List.append tail (36 :: suffix));
   Native.unicode_prefix_delimiter tail 36 suffix
 
-(* A suffix of a dollar-free concatenation is itself dollar-free. *)
+(* Recover the dollar-free tail needed to rewrite the next reference boundary. *)
 let rec suffix_no_dollar (prefix: list byte) (suffix: list byte)
   : Lemma (requires no_dollar (List.append prefix suffix)) (ensures no_dollar suffix) =
   match prefix with
   | [] -> ()
   | _ :: rest -> suffix_no_dollar rest suffix
 
+(* Collect resolver results from this template only. Repeated mentions remain
+   repeated here. Attachment merging must deduplicate images elsewhere.
+   Separate calls let generator and judge text use their own references.
+   PRODUCT.md 3.3.4 and 3.3.5. *)
 let rec resolve_parts #a (resolve: identifier -> GTot a) (parts: list (list byte))
   : GTot (list a) =
   match parts with
@@ -312,8 +331,8 @@ let resolve_template #a (resolve: identifier -> GTot a) (parts: list (list byte)
   | [] -> []
   | _ :: references -> resolve_parts resolve references
 
-(* Resolving renamed reference parts yields exactly the same ordered list of
-   values when corresponding old and renamed identifiers resolve identically. *)
+(* Match each old reference with its renamed reference in template order.
+   This keeps the same resolver results, including repeated mentions. *)
 let rec resolution_renamed_parts #a (rename: identifier -> GTot identifier)
   (before: identifier -> GTot a) (after: identifier -> GTot a) (parts: list (list byte))
   : Lemma
@@ -326,8 +345,9 @@ let rec resolution_renamed_parts #a (rename: identifier -> GTot identifier)
     rename_reference rename part;
     resolution_renamed_parts rename before after rest
 
-(* Renaming a template preserves its ordered list of resolved reference values
-   under corresponding resolvers; the initial literal part contributes no value. *)
+(* A reference-preserving rename keeps the same ordered resolver results.
+   The literal prefix contributes no field, and this theorem does not merge
+   images or validate unknown names. PRODUCT.md 3.3.2. *)
 let resolution_renaming #a (rename: identifier -> GTot identifier)
   (before: identifier -> GTot a) (after: identifier -> GTot a) (parts: list (list byte))
   : Lemma

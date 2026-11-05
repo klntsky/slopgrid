@@ -1,5 +1,10 @@
 module Slopgrid.ConfirmationProofs
 
+(* A destructive form edit first builds a complete proposed draft. The current
+   prompts, Chat histories, attachments, and rubrics stay in place until the
+   matching dialog accepts it. These proofs cover pure state transitions and
+   emitted commands, not browser dialogs or storage writes. PRODUCT.md 3.1.12. *)
+
 module Domain = Slopgrid.Domain
 module Machine = Slopgrid.Machine
 module Input = Slopgrid.Input
@@ -9,9 +14,9 @@ module Native = Slopgrid.Native
 
 #set-options "--fuel 4 --ifuel 2"
 
-(* A deferred proposal leaves the current draft and all unrelated state literally
-   unchanged, records the complete proposal, sets the supplied case counter,
-   increments the confirmation counter, and emits one confirmation command. *)
+(* A pending loss dialog stores the whole proposed setup without changing the
+   current draft or active request. It sets the supplied case counter and takes
+   the next dialog ID, then emits one confirmation command. *)
 let deferred (model: Machine.state) (proposed: Domain.draft) (counter: nat) (text: string)
   (result: Machine.step) : prop =
   result.next_state == {
@@ -26,9 +31,10 @@ let deferred (model: Machine.state) (proposed: Domain.draft) (counter: nat) (tex
   result.change == Domain.MetadataChanged /\
   result.commands == [Domain.Confirm model.next_confirmation text]
 
-(* Committing clears confirmation and validation feedback while preserving active
-   work. Draft equality here ignores source/value ordering metadata; persistence
-   and the change classification depend on that semantic comparison. *)
+(* Acceptance clears the dialog and attempt feedback. An active Generate
+   request keeps its accepted setup. Compare draft values without their
+   parameter-order lists, and request a save only when those values change.
+   The controller can still fail to save. PRODUCT.md 3.1.10 and 3.1.12. *)
 let committed (model: Machine.state) (proposed: Domain.draft) (result: Machine.step) : prop =
   Machine.draft_equal result.next_state.draft proposed /\
   result.next_state.pending_confirmation == None /\
@@ -39,27 +45,31 @@ let committed (model: Machine.state) (proposed: Domain.draft) (result: Machine.s
   result.change ==
     (if Machine.draft_equal proposed model.draft then Domain.MetadataChanged else Domain.DraftChanged)
 
-(* Proposing with confirmation text records the full proposed draft without
-   replacing the current draft, and emits the corresponding confirmation. *)
+(* Opening a loss dialog keeps the complete current setup and stores the complete
+   replacement separately. No prompt, attachment, or rubric changes yet.
+   This is the deferral step for PRODUCT.md 3.1.10 and 3.1.12. *)
 let proposal_preserves_complete_draft (model: Machine.state) (proposed: Domain.draft)
   (counter: nat) (text: string)
   : Lemma
     (deferred model proposed counter text
       (Machine.propose_draft model proposed counter (Some text))) = ()
 
-(* Every direct edit clears any pending confirmation. *)
+(* A direct edit dismisses the old loss proposal instead of leaving a dialog
+   whose later acceptance could overwrite that edit. *)
 let edit_invalidates_confirmation (model: Machine.state) (draft: Domain.draft) (counter: nat)
   : Lemma ((Machine.edit model draft counter).next_state.pending_confirmation == None) = ()
 
-(* A direct edit installs a semantically equal draft and preserves active work;
-   it need not replace ordering metadata with the proposal's literal metadata. *)
+(* A direct edit installs the proposed setup values without touching the active
+   request. Equal setups may retain the current ordering metadata rather than
+   copying the proposal's bookkeeping literally. *)
 let edit_commits_semantically (model: Machine.state) (proposed: Domain.draft) (counter: nat)
   : Lemma (
     Machine.draft_equal (Machine.edit model proposed counter).next_state.draft proposed /\
     (Machine.edit model proposed counter).next_state.active == model.active) = ()
 
-(* Cancelling the currently pending proposal changes only the pending-confirmation
-   field, reports a metadata change, and emits no commands. *)
+(* Cancel only the currently pending dialog. The complete setup and all other
+   state stay unchanged, and cancellation emits no save command.
+   This is the cancellation rule in PRODUCT.md 3.1.10 and 3.1.12. *)
 let matching_cancellation_preserves_complete_draft (model: Machine.state)
   (proposal: Machine.confirmation)
   : Lemma
@@ -70,9 +80,10 @@ let matching_cancellation_preserves_complete_draft (model: Machine.state)
       result.next_state == {model with pending_confirmation = None} /\
       result.change == Domain.MetadataChanged /\ result.commands == [])) = ()
 
-(* Accepting the currently pending proposal commits it under semantic draft
-   equality, clears pending confirmation and feedback, and preserves active work.
-   It persists only when the proposal differs semantically from the current draft. *)
+(* Accept only the currently pending dialog, then install its complete proposal
+   in one step. Clear the dialog and feedback without changing an active request.
+   Emit a save command only for changed setup values. This is the state-transition
+   part of atomic acceptance in PRODUCT.md 3.1.12. *)
 let matching_acceptance_commits_atomically (model: Machine.state) (proposal: Machine.confirmation)
   : Lemma
     (requires (model.pending_confirmation == Some proposal))
@@ -81,8 +92,8 @@ let matching_acceptance_commits_atomically (model: Machine.state) (proposal: Mac
         (Machine.update_step model (Domain.ConfirmationResolved proposal.confirmation_id true)))) =
   edit_commits_semantically model proposal.proposed_draft model.next_case
 
-(* Resolving an ID not owned by the current pending confirmation leaves the
-   entire state unchanged and emits neither a change nor commands. *)
+(* An answer from a closed or superseded dialog cannot edit the setup.
+   With no matching pending ID, both acceptance and cancellation do nothing. *)
 let stale_confirmation_is_inert (model: Machine.state) (id: pos) (accepted: bool)
   : Lemma
     (requires (not (Machine.owns_confirmation model id)))
@@ -90,8 +101,9 @@ let stale_confirmation_is_inert (model: Machine.state) (id: pos) (accepted: bool
       let result = Machine.update_step model (Domain.ConfirmationResolved id accepted) in
       result.next_state == model /\ result.change == Domain.NoChange /\ result.commands == [])) = ()
 
-(* Proposing and then cancelling that proposal preserves the original draft
-   literally, clears the pending confirmation, and emits no cancellation commands. *)
+(* Open a loss dialog and cancel that same ID. The original draft survives
+   literally, the dialog closes, and cancellation emits no commands.
+   PRODUCT.md 3.1.10 and 3.1.12. *)
 let proposal_cancel_trace (model: Machine.state) (proposed: Domain.draft) (counter: nat) (text: string)
   : Lemma (
     let pending = (Machine.propose_draft model proposed counter (Some text)).next_state in
@@ -105,8 +117,9 @@ let proposal_cancel_trace (model: Machine.state) (proposed: Domain.draft) (count
     proposed_draft = proposed
   }
 
-(* Proposing and then accepting that proposal commits a semantically equal draft,
-   clears confirmation and feedback, and persists only a semantic draft change. *)
+(* Open a loss dialog, then accept that same ID. Install the waiting setup
+   in one update and clear attempt feedback. If its values changed, ask the
+   controller to save them. PRODUCT.md 3.1.12. *)
 let proposal_accept_trace (model: Machine.state) (proposed: Domain.draft) (counter: nat) (text: string)
   : Lemma (
     let pending = (Machine.propose_draft model proposed counter (Some text)).next_state in
@@ -118,9 +131,10 @@ let proposal_accept_trace (model: Machine.state) (proposed: Domain.draft) (count
     proposed_draft = proposed
   }
 
-(* An input action without confirmation commits its reduced draft semantically.
-   With confirmation, a semantic no-op preserves the literal draft and clears
-   pending confirmation; a semantic change instead records a deferred proposal. *)
+(* Compute the proposed case or parameter conversion. If stored setup values
+   did not change, dismiss an old dialog and reset attempt feedback. Otherwise
+   commit an edit with no loss warning, or wait for the warning's dialog.
+   PRODUCT.md 3.1.10. *)
 let input_conversion_dispatch (model: Machine.state) (action: Domain.input_action)
   : Lemma (
     let before = model.draft.editable.draft_layout in
@@ -153,9 +167,9 @@ let input_conversion_dispatch (model: Machine.state) (action: Domain.input_actio
     | None -> edit_commits_semantically model proposed counter
     | Some text -> proposal_preserves_complete_draft model proposed counter text
 
-(* If the dropped-parameter detector reports loss, dispatch preserves the literal
-   draft and active work, emitting either nothing or one confirmation command.
-   This is an implication from a detector report, not completeness of detection. *)
+(* When the detector reports dropped parameters, keep the current setup and
+   active Generate request. Open a new dialog only if the proposal changes
+   the stored setup values. PRODUCT.md 3.1.10. *)
 let detected_ownership_loss_is_deferred (model: Machine.state) (action: Domain.input_action)
   : Lemma
     (requires (Input.dropped_parameters model.draft.editable.draft_layout action <> []))
@@ -170,8 +184,9 @@ let detected_ownership_loss_is_deferred (model: Machine.state) (action: Domain.i
   | [] -> ()
   | _ :: _ -> ()
 
-(* Format selection commits the selected draft semantically when no loss is
-   reported; any reported loss instead defers the full proposal for confirmation. *)
+(* Format selection commits the prepared setup when its loss list is empty.
+   A reported loss instead opens one dialog holding the complete proposal.
+   This proves dispatch conditional on that loss list. PRODUCT.md 3.1.12. *)
 let format_conversion_dispatch (model: Machine.state) (format: Domain.format)
   : Lemma (
     let proposed, counter, dropped =
@@ -190,9 +205,9 @@ let format_conversion_dispatch (model: Machine.state) (format: Domain.format)
   | [] -> edit_commits_semantically model proposed counter
   | _ :: _ -> ()
 
-(* A nonempty loss report from format selection preserves the literal draft and
-   active work and emits exactly one confirmation command. This does not claim
-   that every possible format loss is detected. *)
+(* A reported format loss leaves the current prompt/history, attachments, and
+   other draft values untouched while one confirmation command is pending.
+   This proves deferral, not complete loss detection. PRODUCT.md 3.1.12. *)
 let detected_format_loss_is_deferred (model: Machine.state) (format: Domain.format)
   : Lemma (
     let _, _, dropped =
@@ -204,8 +219,8 @@ let detected_format_loss_is_deferred (model: Machine.state) (format: Domain.form
        (exists text. result.commands == [Domain.Confirm model.next_confirmation text]))) =
   format_conversion_dispatch model format
 
-(* A budget edit clears pending confirmation, so accepting any ID immediately
-   afterward is a state-preserving no-op with no commands. *)
+(* Editing the budget dismisses any pending loss dialog. A late acceptance of
+   any old ID then cannot restore the proposal over the new budget. *)
 let budget_edit_invalidates_and_stale_acceptance_is_inert (model: Machine.state)
   (text: string) (id: pos)
   : Lemma (
@@ -216,8 +231,8 @@ let budget_edit_invalidates_and_stale_acceptance_is_inert (model: Machine.state)
   edit_invalidates_confirmation model
     {model.draft with editable = {model.draft.editable with budget_text = text}} model.next_case
 
-(* When an input action requires no confirmation, its edit clears any pending
-   proposal and a subsequent acceptance of any ID is inert. *)
+(* An input action that needs no dialog dismisses the old proposal as it edits
+   the setup. A late acceptance cannot overwrite that edit. *)
 let input_edit_invalidates_and_stale_acceptance_is_inert (model: Machine.state)
   (action: Domain.input_action) (id: pos)
   : Lemma
@@ -230,19 +245,19 @@ let input_edit_invalidates_and_stale_acceptance_is_inert (model: Machine.state)
       stale.change == Domain.NoChange)) =
   input_conversion_dispatch model action
 
-(* Freshness means only that an outstanding proposal's ID is below the next
-   confirmation counter; states without an outstanding proposal satisfy it too. *)
+(* A pending dialog's ID must be below the next dialog counter. With no pending
+   dialog there is no ID to check. This alone does not describe valid draft data. *)
 let confirmation_ids_are_fresh (model: Machine.state) : prop =
   match model.pending_confirmation with
   | None -> True
   | Some proposal -> proposal.confirmation_id < model.next_confirmation
 
-(* Initialization satisfies the pending-confirmation ID freshness invariant. *)
+(* A newly initialized form has no pending dialog with a reused future ID. *)
 let initial_confirmation_ids_are_fresh (initial: Domain.initial) (context: Domain.context)
   : Lemma (confirmation_ids_are_fresh (Machine.init initial context)) = ()
 
-(* Every dispatched event preserves confirmation-ID freshness, assuming the
-   incoming state's pending ID is already below its next-confirmation counter. *)
+(* Every form event keeps the pending ID below the next counter, provided that
+   was already true before the event. This is dialog bookkeeping only. *)
 let dispatch_preserves_confirmation_id_freshness (model: Machine.state) (event: Domain.event)
   : Lemma
     (requires (confirmation_ids_are_fresh model))
@@ -264,9 +279,9 @@ let dispatch_preserves_confirmation_id_freshness (model: Machine.state) (event: 
   | Domain.SelectFormat format -> format_conversion_dispatch model format
   | _ -> ()
 
-(* Given a pending proposal and fresh confirmation IDs, any later input action
-   makes acceptance of that old proposal inert, even if the action proposes a
-   new confirmation instead of immediately committing. *)
+(* A later input edit makes the old dialog's acceptance inert, even when that
+   edit opens a new loss dialog. The freshness assumption keeps the new dialog
+   from reusing the old ID. *)
 let later_input_action_prevents_old_acceptance (model: Machine.state)
   (proposal: Machine.confirmation) (action: Domain.input_action)
   : Lemma
@@ -283,8 +298,8 @@ let later_input_action_prevents_old_acceptance (model: Machine.state)
   assert (not (Machine.owns_confirmation edited proposal.confirmation_id));
   stale_confirmation_is_inert edited proposal.confirmation_id true
 
-(* Given a pending proposal and fresh confirmation IDs, a later format selection
-   makes acceptance of the old proposal a state-preserving, command-free no-op. *)
+(* Selecting another format invalidates acceptance of the previous proposal.
+   Fresh dialog IDs distinguish the replacement dialog from the old one. *)
 let later_format_selection_prevents_old_acceptance (model: Machine.state)
   (proposal: Machine.confirmation) (format: Domain.format)
   : Lemma
@@ -312,9 +327,10 @@ let later_format_selection_prevents_old_acceptance (model: Machine.state)
   assert (not (Machine.owns_confirmation edited proposal.confirmation_id));
   stale_confirmation_is_inert edited proposal.confirmation_id true
 
-(* If an input conversion requests confirmation and changes the draft
-   semantically, it defers the complete proposal. Cancelling preserves the
-   original literal draft; accepting commits under semantic draft equality. *)
+(* For a changed input conversion that requests confirmation, cancel keeps the
+   complete original setup and accept commits the whole proposal's setup values.
+   These traces use the matching dialog ID. They prove atomic handling, not
+   complete loss detection for PRODUCT.md 3.1.10. *)
 let input_conversion_atomic_resolution_trace (model: Machine.state) (action: Domain.input_action)
   : Lemma (
     let before = model.draft.editable.draft_layout in
@@ -359,9 +375,10 @@ let input_conversion_atomic_resolution_trace (model: Machine.state) (action: Dom
       matching_cancellation_preserves_complete_draft pending proposal;
       matching_acceptance_commits_atomically pending proposal
 
-(* If format selection reports loss, it defers the selected draft without changing
-   the original literal draft. Cancelling preserves that draft and clears the
-   proposal; accepting commits the selected draft under semantic equality. *)
+(* When format selection reports loss, the current setup stays untouched until
+   the matching dialog resolves. Cancel keeps it literally. Accept installs the
+   proposal's setup values together. This proves conditional atomic handling,
+   not complete history-loss detection. PRODUCT.md 3.1.12 and 3.3.9. *)
 let format_conversion_atomic_resolution_trace (model: Machine.state) (format: Domain.format)
   : Lemma (
     let proposed, counter, dropped =
@@ -395,9 +412,9 @@ let format_conversion_atomic_resolution_trace (model: Machine.state) (format: Do
     matching_cancellation_preserves_complete_draft pending proposal;
     matching_acceptance_commits_atomically pending proposal
 
-(* When the differing-value predicate holds for a common-capable parameter,
-   moving it to common reports exactly that parameter as dropped and requests
-   confirmation. This states one sufficient condition for detection. *)
+(* If the differing-value check rejects returning a parameter to common, that
+   parameter appears in the loss list and requests a dialog. This covers that
+   detection condition, not every conversion loss. PRODUCT.md 3.1.10. *)
 let differing_common_return_is_detected (layout: Domain.layout) (p: Domain.common_parameter)
   : Lemma
     (requires (Input.differing layout p))
@@ -405,8 +422,8 @@ let differing_common_return_is_detected (layout: Domain.layout) (p: Domain.commo
       (Input.dropped_parameters layout (Domain.MoveToCommon p) == [p] /\
         (exists text. Input.confirmation layout (Domain.MoveToCommon p) == Some text))) = ()
 
-(* A list member satisfying a Boolean predicate witnesses that the list's
-   existential predicate test succeeds. *)
+(* A witnessed list member makes the detector's existential scan succeed.
+   Later proofs use this to turn one populated field into a loss report. *)
 let rec existsb_witness (#a: eqtype) (predicate: a -> Tot bool)
   (values: list a) (witness: a)
   : Lemma
@@ -421,8 +438,8 @@ let rec existsb_witness (#a: eqtype) (predicate: a -> Tot bool)
     else
       existsb_witness predicate rest witness
 
-(* A list member satisfying the filter predicate remains a member of the
-   filtered list. *)
+(* A witnessed loss survives filtering when it meets the filter's condition.
+   This lets the detector discard unrelated parameter keys without losing it. *)
 let rec filter_witness (#a: eqtype) (predicate: a -> Tot bool)
   (values: list a) (witness: a)
   : Lemma
@@ -437,7 +454,7 @@ let rec filter_witness (#a: eqtype) (predicate: a -> Tot bool)
     else
       filter_witness predicate rest witness
 
-(* Any member of the right-hand list remains a member after a list is prepended. *)
+(* A loss already present in the later list survives prepending earlier entries. *)
 let rec append_right_member (#a: eqtype) (left: list a) (right: list a) (witness: a)
   : Lemma
     (requires (List.mem witness right))
@@ -447,6 +464,8 @@ let rec append_right_member (#a: eqtype) (left: list a) (right: list a) (witness
   | [] -> ()
   | _ :: rest -> append_right_member rest right witness
 
+(* Count actual field text or images, not the number of cases. Several identical
+   cases still lose their numbered fields when the axis leaves case mode. *)
 let populated_field (field: option Domain.variable_field) : Tot bool =
   match field with
   | None -> false
@@ -454,9 +473,10 @@ let populated_field (field: option Domain.variable_field) : Tot bool =
     Native.length field.text > 0 || List.length (Input.option_list field.field_images) > 0
 
 #push-options "--fuel 8"
-(* A numbered field with nonempty text or images in an entry on the affected axis
-   causes variable loss to be reported when collapsing that axis or selecting a
-   common-capable replacement. This is a sufficient condition, not a converse. *)
+(* One numbered field with text or images is enough to report variable loss
+   when leaving its axis's case mode. No differing case values are required,
+   even for a single case. This is a sufficient detection condition, not a
+   converse or a complete conversion proof. PRODUCT.md 3.1.10. *)
 let populated_numbered_fields_are_detected (layout: Domain.layout) (side: Domain.axis)
   (entry: Domain.case_record) (fields: list (option Domain.variable_field))
   (field: Domain.variable_field) (replacement: Domain.common_parameter)
@@ -536,8 +556,8 @@ let populated_numbered_fields_are_detected (layout: Domain.layout) (side: Domain
       (Parameters.axis_parameters layout side)) Domain.PVariable
 #pop-options
 
-(* Removing layout ordering metadata for comparison preserves the typed source
-   of every common-capable parameter. *)
+(* Ignoring layout ordering for draft comparison keeps each parameter's actual
+   common, row, or column owner. An ownership change cannot hide in that metadata. *)
 let comparison_preserves_typed_source (layout: Domain.layout) (p: Domain.common_parameter)
   : Lemma
     (Parameters.get_source (Input.layout_data layout).parameters p ==
@@ -547,7 +567,7 @@ let comparison_preserves_typed_source (layout: Domain.layout) (p: Domain.common_
   | Domain.PQuality | Domain.PBackground | Domain.PJudgeModel | Domain.PJudgeEffort
   | Domain.PJudgeCriteria | Domain.PJudgeSystem -> ()
 
-(* Replacing the source-order list does not change any typed parameter source. *)
+(* Reordering parameter headers does not change which source owns each setting. *)
 let source_order_preserves_typed_source (sources: Domain.parameter_sources)
   (order: list Domain.common_parameter) (p: Domain.common_parameter)
   : Lemma
@@ -558,8 +578,8 @@ let source_order_preserves_typed_source (sources: Domain.parameter_sources)
   | Domain.PQuality | Domain.PBackground | Domain.PJudgeModel | Domain.PJudgeEffort
   | Domain.PJudgeCriteria | Domain.PJudgeSystem -> ()
 
-(* Neutralizing a dimension preserves the entire parameter-source record,
-   regardless of allocation inputs and the case counter. *)
+(* Restoring a neutral position on an empty dimension leaves parameter ownership
+   untouched. This helper does not return any case values to common itself. *)
 let neutral_dimension_preserves_sources (layout: Domain.layout) (side: Domain.axis)
   (allocation: string & list string) (counter: nat)
   : Lemma (
@@ -567,8 +587,9 @@ let neutral_dimension_preserves_sources (layout: Domain.layout) (side: Domain.ax
     after.parameters == layout.parameters) = ()
 
 #push-options "--fuel 8"
-(* If a common-capable parameter has differing axis values, reducing its move to
-   common gives it a common source; this claim does not identify the stored value. *)
+(* Returning a parameter with differing case values gives it a common owner.
+   This proves the ownership change only, not which default value was stored.
+   It is one step of PRODUCT.md 3.1.10. *)
 let differing_common_return_changes_source (layout: Domain.layout) (p: Domain.common_parameter)
   (prefix: string) (counter: nat)
   : Lemma
@@ -601,9 +622,10 @@ let differing_common_return_changes_source (layout: Domain.layout) (p: Domain.co
   | _ -> ()
 #pop-options
 
-(* A differing common-capable parameter moved to common produces one deferred
-   proposal containing the reduced draft, rather than immediately changing the
-   current draft. *)
+(* Returning differing case values to common opens exactly one loss proposal,
+   rather than replacing the current setup immediately. The proposal contains
+   the whole reduced draft, including unaffected prompts and judge settings.
+   This is the confirmation step of PRODUCT.md 3.1.10 and 3.8.9. *)
 let differing_common_return_proposes_once (model: Machine.state) (p: Domain.common_parameter)
   : Lemma
     (requires (Input.differing model.draft.editable.draft_layout p))
@@ -622,13 +644,16 @@ let differing_common_return_proposes_once (model: Machine.state) (p: Domain.comm
   let after, _ = Input.reduce before (Domain.MoveToCommon p) model.case_prefix model.next_case in
   differing_common_return_is_detected before p;
   differing_common_return_changes_source before p model.case_prefix model.next_case;
+  (* Returning a case-owned setting to a shared control changes stored data
+     even when we ignore header order. It cannot take the unchanged branch. *)
   comparison_preserves_typed_source before p;
   comparison_preserves_typed_source after p;
   input_conversion_dispatch model (Domain.MoveToCommon p)
 
-(* An axis-owned common-capable parameter with differing values is reported as
-   dropped by collapsing that axis or replacing its dimension with a different
-   parameter. The conclusion is conditional on ownership and detected difference. *)
+(* A differing parameter owned by the affected axis appears in the loss list
+   when that axis becomes single or changes to another parameter. Ownership,
+   detected difference, and a different replacement key are assumptions here.
+   This covers those detector conditions in PRODUCT.md 3.1.10. *)
 let differing_axis_parameters_are_detected (layout: Domain.layout) (side: Domain.axis)
   (p: Domain.common_parameter) (replacement: Domain.parameter)
   : Lemma
@@ -679,7 +704,7 @@ let differing_axis_parameters_are_detected (layout: Domain.layout) (side: Domain
     (List.filter (fun (key: Domain.parameter) -> key <> replacement)
       (Parameters.axis_parameters layout side)) (p <: Domain.parameter)
 
-(* The input module's Boolean membership test agrees with list membership. *)
+(* The detector's membership function agrees with the list fact used in proofs. *)
 let rec membership_test_agrees (#a: eqtype) (value: a) (values: list a)
   : Lemma (Input.member value values == List.mem value values)
     (decreases values) =
@@ -687,8 +712,8 @@ let rec membership_test_agrees (#a: eqtype) (value: a) (values: list a)
   | [] -> ()
   | _ :: rest -> membership_test_agrees value rest
 
-(* Adding a parameter to the dropped-parameter list ensures it is recorded,
-   whether it was already present or is newly appended. *)
+(* Recording a dropped parameter retains it whether the loss list already
+   contains it or needs to append it. Duplicate reports need no duplicate entry. *)
 let dropped_parameter_is_recorded (dropped: list Domain.parameter) (p: Domain.parameter)
   : Lemma (List.mem p (Input.add_dropped dropped p)) =
   membership_test_agrees p dropped;
@@ -697,9 +722,10 @@ let dropped_parameter_is_recorded (dropped: list Domain.parameter) (p: Domain.pa
   else
     append_right_member dropped [p] p
 
-(* For a non-chat format, a common prompt history that is not exactly one user-role
-   message is reset to the input default, and input loss is recorded. This covers
-   this particular incompatibility rather than complete format validation. *)
+(* Anything other than one user-role message cannot become a prompt unchanged.
+   For a non-Chat format, normalization resets that shared input and records loss.
+   This covers one incompatibility, not dialog dispatch or every format rule.
+   PRODUCT.md 3.3.9. *)
 let incompatible_common_history_is_detected (layout: Domain.layout) (format: Domain.format)
   (messages: list Domain.message) (dropped: list Domain.parameter)
   : Lemma
@@ -712,8 +738,9 @@ let incompatible_common_history_is_detected (layout: Domain.layout) (format: Dom
       after.parameters.input_source == Domain.Common (Parameters.parameter_default Domain.PInput))) =
   dropped_parameter_is_recorded dropped Domain.PInput
 
-(* The case-history normalization fold retains an existing input-loss report,
-   or records one if a remaining entry's history is not exactly one user-role message. *)
+(* While walking case-owned histories, keep any earlier input-loss report.
+   A remaining history that cannot fit a single-user prompt also records loss.
+   One incompatible case is enough to require it. *)
 let rec case_history_fold_records_loss (entries: list Domain.case_record)
   (cases: list Domain.case_record) (dropped: list Domain.parameter) (witness: Domain.case_record)
   : Lemma
@@ -750,8 +777,10 @@ let rec case_history_fold_records_loss (entries: list Domain.case_record)
         }])
         (Input.add_dropped dropped Domain.PInput) witness)
 
-(* For a non-chat format with axis-owned input, a history that is not exactly one
-   user-role message in any entry of that axis causes normalization to report input loss. *)
+(* When complete inputs belong to an axis, one case history that cannot fit a
+   single-user prompt makes non-Chat normalization report input loss.
+   This is sufficient detection, not a proof of every conversion rule or of the
+   confirmation dialog itself. PRODUCT.md 3.3.9. *)
 let incompatible_case_history_is_detected (layout: Domain.layout) (format: Domain.format)
   (side: Domain.axis) (entry: Domain.case_record) (dropped: list Domain.parameter)
   : Lemma

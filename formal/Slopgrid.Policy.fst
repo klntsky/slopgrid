@@ -1,5 +1,10 @@
 module Slopgrid.Policy
 
+(* Combine pure validation and per-cell capability feedback into a form
+   decision. Provider connection, upload count, and submission phase arrive as
+   facts from the caller. This function performs no upload or provider request.
+   PRODUCT.md 3.4.1. *)
+
 module Domain = Slopgrid.Domain
 open Slopgrid.Domain
 module List = FStar.List.Tot.Base
@@ -13,11 +18,16 @@ let evaluate (draft: Domain.draft) (attempted: bool) (pending_uploads: nat)
   let input = draft.editable in
   let g = input.draft_layout in
   let provider = context.provider in
+  (* Capacity belongs to an output format. A reply for the previous format
+     cannot make the current draft ready after a format change. *)
   let capacity_ready =
     match provider.capacity with
     | Domain.CapacityReady format _ -> format = g.output_format
     | _ -> false
   in
+  (* For Image, cap the supplied available count at the number of cells and
+     retain at least one worker. Text concurrency and monetary allowance
+     planning are not implemented by this choice. *)
   let workers : option pos =
     if g.output_format = Domain.Image && capacity_ready then
       let cells = List.length g.rows * List.length g.columns in
@@ -35,6 +45,9 @@ let evaluate (draft: Domain.draft) (attempted: bool) (pending_uploads: nat)
   let cells, compatibility_issues =
     PolicyCompatibility.analyze (PolicyAdmission.preview candidate) budget context.catalog
   in
+  (* Keep advisory compatibility feedback visible without blocking an attempt.
+     Required image-input capability and judge eligibility arrive as blocking
+     issues from the per-cell checks. PRODUCT.md 3.4.7 and 3.8.5. *)
   let blocking_validation = List.filter (fun issue -> not issue.Domain.deferred) validation_issues in
   let blocking_compatibility = List.filter (fun issue -> issue.Domain.blocking) compatibility_issues in
   let busy = submission_phase = Domain.Submitting || submission_phase = Domain.Completed in
@@ -58,6 +71,9 @@ let evaluate (draft: Domain.draft) (attempted: bool) (pending_uploads: nat)
     PolicyBase.unique (List.map (fun issue -> issue.Domain.reason) blocking_compatibility) @
     (if connected then [] else ["Connect OpenRouter."])
   in
+  (* An attempt can reveal deferred missing selections without submitting.
+     Only a fully valid candidate reaches ReadyToSubmit. Enabling an attempt
+     and admitting a submission are different decisions. *)
   let decision =
     if not can_attempt then Domain.CannotAttempt reasons
     else

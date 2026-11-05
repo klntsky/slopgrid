@@ -1,5 +1,10 @@
 module Slopgrid.OwnershipProofs
 
+(* These proofs follow stored settings through moves between common controls
+   and row or column cases. A resolved input here is still a template. The
+   expanded prompt also depends on its variable fields. The next ownership
+   proof module handles that extra step. PRODUCT.md 3.1.10 and 3.3.9. *)
+
 module Parameters = Slopgrid.Parameters
 module Input = Slopgrid.Input
 module CellSemantics = Slopgrid.CellSemantics
@@ -8,8 +13,9 @@ open Slopgrid.Domain
 
 #set-options "--fuel 4 --ifuel 1"
 
-(* The parameter API and cell semantics select exactly the same source for a
-   common parameter. *)
+(* The edit helpers and the cell model read the same source tag for a setting.
+   This connection lets the proofs below reason about shared and case-owned
+   values while using the actual edit functions. *)
 let source_projection (sources: parameter_sources) (p: common_parameter)
   : Lemma (Parameters.get_source sources p == CellSemantics.source_for sources p) =
   match p with
@@ -25,8 +31,9 @@ let source_projection (sources: parameter_sources) (p: common_parameter)
   | PJudgeCriteria
   | PJudgeSystem -> ()
 
-(* Reading a parameter from case values through the parameter API gives exactly
-   the same optional value as the semantic projection, including variables. *)
+(* Both readers return the same stored value from a row or column case,
+   including a missing field. Ownership edits use the parameter reader. The
+   cell model uses the other reader, so the proofs need this agreement. *)
 let case_projection (values: case_values) (p: parameter)
   : Lemma (Parameters.get_case_value values p == CellSemantics.case_value values p) =
   match p with
@@ -43,8 +50,9 @@ let case_projection (values: case_values) (p: parameter)
   | PJudgeSystem
   | PVariable -> ()
 
-(* The two list lookup functions return the same optional case record at every
-   index, including indices beyond the end of the list. *)
+(* Cell coordinates use list positions to select cases. The two readers agree
+   on the selected case and both return absence beyond the list, letting the
+   later proofs use either reader without assuming a valid coordinate. *)
 let rec entry_projection (values: list case_record) (index: nat)
   : Lemma (Parameters.at values index == CellSemantics.entry_at values index) =
   match values with
@@ -55,8 +63,9 @@ let rec entry_projection (values: list case_record) (index: nat)
     else
       entry_projection rest (index - 1)
 
-(* Looking up an axis entry and then its parameter field agrees exactly with
-   the semantic axis-value lookup, including missing entries or fields. *)
+(* Choosing a case and then reading its setting gives the cell model's value
+   for that axis position. Missing cases and missing fields stay absent.
+   Neither reader silently supplies a default. *)
 let axis_projection (input: layout) (side: axis) (index: nat) (p: parameter)
   : Lemma (
     (match Parameters.at (Parameters.entries input side) index with
@@ -68,8 +77,10 @@ let axis_projection (input: layout) (side: axis) (index: nat) (p: parameter)
   | None -> ()
   | Some entry -> case_projection entry.values p
 
-(* Parameter lookup agrees with source-directed semantic resolution at the
-   given coordinates, regardless of the optional side argument. *)
+(* Shared settings ignore both coordinates. Row-owned settings use the row,
+   and column-owned settings use the column. The optional side argument only
+   matters for variable fields, which are excluded here. Both readers choose
+   the same stored value before expansion. PRODUCT.md 3.3.9. *)
 let parameter_value_refines_resolve (input: layout) (p: common_parameter)
   (row: nat) (column: nat) (side: option axis)
   : Lemma (
@@ -84,8 +95,9 @@ let parameter_value_refines_resolve (input: layout) (p: common_parameter)
     | Rows
     | Columns -> ()
 
-(* A parameter's source cannot be both common and axis-owned, nor can it be
-   owned by both rows and columns. This is exclusivity of the source tag. *)
+(* A present source tag chooses exactly one of common, rows, or columns.
+   This proves exclusivity, not that an optional setting has a source or that
+   every owning case contains its value. PRODUCT.md 3.1.10. *)
 let exclusive_source (input: layout) (p: common_parameter)
   : Lemma (
     (forall (v: value_for p) (side: axis).
@@ -95,8 +107,9 @@ let exclusive_source (input: layout) (p: common_parameter)
       CellSemantics.source_for input.parameters p <> Some (OnAxis Columns))) =
   ()
 
-(* When a parameter has a common value, replacing either list of cases leaves
-   its resolved value unchanged at the given coordinates. *)
+(* Replacing either table of cases cannot change a shared stored setting.
+   A shared prompt can still expand differently if those cases supply its
+   variables. This law stops before template expansion. *)
 let common_ignores_all_cases (input: layout) (p: common_parameter) (v: value_for p)
   (rows: list case_record) (columns: list case_record) (row: nat) (column: nat)
   : Lemma
@@ -110,8 +123,10 @@ let common_ignores_all_cases (input: layout) (p: common_parameter) (v: value_for
       CellSemantics.resolve input row column p)) =
   ()
 
-(* A row-owned parameter is unaffected by replacing all columns or changing
-   the column coordinate while keeping the row coordinate fixed. *)
+(* A row-owned setting reads the same stored value across that row, even
+   after replacing the columns. A row-owned prompt may reference COLUMN
+   variables, so this does not make its expanded input independent of columns.
+   PRODUCT.md 3.3.9. *)
 let row_owner_ignores_columns (input: layout) (p: common_parameter)
   (columns: list case_record) (row: nat) (column: nat) (other_column: nat)
   : Lemma
@@ -121,8 +136,9 @@ let row_owner_ignores_columns (input: layout) (p: common_parameter)
         CellSemantics.resolve input row column p)) =
   ()
 
-(* A column-owned parameter is unaffected by replacing all rows or changing
-   the row coordinate while keeping the column coordinate fixed. *)
+(* A column-owned setting reads the same stored value down that column, even
+   after replacing the rows. ROW references in a column-owned prompt can still
+   change its expanded text or images. PRODUCT.md 3.3.9. *)
 let column_owner_ignores_rows (input: layout) (p: common_parameter)
   (rows: list case_record) (row: nat) (column: nat) (other_row: nat)
   : Lemma
@@ -132,8 +148,9 @@ let column_owner_ignores_rows (input: layout) (p: common_parameter)
         CellSemantics.resolve input row column p)) =
   ()
 
-(* Setting a value in every case changes an indexed field only when that field
-   is the value's parameter; an out-of-range lookup remains absent. *)
+(* Copying a setting into every existing case changes only that setting's
+   stored field. This indexed fact also covers missing coordinates, so moving
+   ownership cannot manufacture a case through field lookup. *)
 let rec mapped_set_value (values: list case_record) (v: value) (q: parameter) (index: nat)
   : Lemma (
     (match Parameters.at
@@ -153,8 +170,9 @@ let rec mapped_set_value (values: list case_record) (v: value) (q: parameter) (i
     else
       mapped_set_value rest v q (index - 1)
 
-(* Removing a parameter from every case makes that indexed field absent and
-   preserves every other field, with out-of-range lookups still absent. *)
+(* Stripping a returned-to-common setting from every case leaves each other
+   stored field untouched. The indexed lookup remains absent outside the
+   table. Later collapse proofs use this for unrelated settings. *)
 let rec mapped_remove_value
   (values: list case_record) (p: parameter) (q: parameter) (index: nat)
   : Lemma (
@@ -175,7 +193,9 @@ let rec mapped_remove_value
     else
       mapped_remove_value rest p q (index - 1)
 
-(* Any index strictly below the case-list length has a present entry. *)
+(* A valid row or column position selects an existing case. The copy proofs
+   use this bound to avoid claiming that ownership preserves a common value
+   at a destination position that never existed. *)
 let rec entry_exists (values: list case_record) (index: nat)
   : Lemma
     (requires (index < List.length values))
@@ -189,9 +209,10 @@ let rec entry_exists (values: list case_record) (index: nat)
       entry_exists rest (index - 1)
 
 #push-options "--fuel 8 --ifuel 2"
-(* For a common parameter and a nonempty target axis, taking ownership sets
-   that axis as the source and copies the common value into every existing
-   case, without advancing the allocation counter. *)
+(* Moving a shared setting into a nonempty destination copies it into every
+   existing case and changes its source tag. It creates no case IDs and does
+   not advance the allocation counter. The destination already exists, as
+   required for complete inputs and rubrics. PRODUCT.md 3.1.10. *)
 let own_existing_cases (input: layout) (p: common_parameter) (side: axis)
   (v: value_for p) (allocation: string & list string) (counter: nat)
   : Lemma
@@ -213,8 +234,10 @@ let own_existing_cases (input: layout) (p: common_parameter) (side: axis)
   | _ -> ()
 #pop-options
 
-(* Moving a common value into an axis preserves every common parameter's
-   resolved value at coordinates whose target-axis index already exists. *)
+(* Copying a shared setting into cases keeps each chosen parameter value at
+   this cell. For example, moving the prompt must not change its model.
+   The destination case must exist. Variable expansion comes in a later
+   proof. PRODUCT.md 3.1.10. *)
 let own_preserves_every_parameter (input: layout) (p: common_parameter) (side: axis)
   (v: value_for p) (allocation: string & list string) (counter: nat)
   (q: common_parameter) (row: nat) (column: nat)
@@ -258,8 +281,9 @@ let own_preserves_every_parameter (input: layout) (p: common_parameter) (side: a
         | Rows
         | Columns -> ()
 
-(* Taking ownership leaves the opposite axis exactly unchanged, as well as
-   output format, case ownership, variable names, judging, and worker count. *)
+(* Moving one setting does not edit the opposite table or change which axes
+   are case tables. Format, variable names, judging and worker count also stay
+   as they were. This is not a claim about every layout field. *)
 let own_preserves_opposite_axis_and_metadata (input: layout) (p: common_parameter)
   (side: axis) (allocation: string & list string) (counter: nat)
   : Lemma (
@@ -278,9 +302,10 @@ let own_preserves_opposite_axis_and_metadata (input: layout) (p: common_paramete
     | Rows
     | Columns -> ()
 
-(* The MoveToAxis reducer preserves every common parameter's resolved value
-   when the moved parameter is common and the target-axis index exists;
-   a target that is not a case axis is left unchanged by the reducer. *)
+(* The MoveToAxis action keeps stored settings unchanged at existing
+   destination positions when the moved value was shared. If the destination
+   is not in case mode, the reducer does nothing. This covers the pure action,
+   not destination-menu behavior. PRODUCT.md 3.1.10. *)
 let move_to_axis_preserves_every_parameter (input: layout) (p: common_parameter)
   (side: axis) (v: value_for p) (prefix: string) (counter: nat)
   (q: common_parameter) (row: nat) (column: nat)
@@ -297,8 +322,9 @@ let move_to_axis_preserves_every_parameter (input: layout) (p: common_parameter)
   else
     ()
 
-(* Input and semantic message normalization agree exactly: absent and empty
-   image lists both normalize to an absent image list. *)
+(* Collapse compares complete messages with absent and empty image lists
+   treated alike. The edit helper and cell model make that same normalization
+   without changing message roles, text, or order. PRODUCT.md 3.3.9. *)
 let rec message_normalization_refines (messages: list message)
   : Lemma (Input.normalize_messages messages == CellSemantics.normalize_messages messages) =
   match messages with
@@ -312,8 +338,9 @@ let rec message_normalization_refines (messages: list message)
       | []
       | _ :: _ -> ()
 
-(* Input and semantic variable-field normalization agree exactly, preserving
-   absent fields and treating empty image lists like absent image lists. *)
+(* Variable fields use the same empty-image normalization in both readers.
+   Deleted slots stay absent, and field text stays literal. This helper
+   connects their equality checks. It does not perform variable expansion. *)
 let rec field_normalization_refines (fields: list (option variable_field))
   : Lemma (Input.normalize_fields fields == CellSemantics.normalize_fields fields) =
   match fields with
@@ -330,8 +357,10 @@ let rec field_normalization_refines (fields: list (option variable_field))
         | []
         | _ :: _ -> ()
 
-(* The input comparison representation is exactly the semantic canonical
-   value, normalizing image-list emptiness for messages and variable fields. *)
+(* The edit code compares values exactly as the cell model does, after
+   normalizing empty image lists in messages and variable fields.
+   This allows collapse to retain identical inputs despite that storage
+   difference. PRODUCT.md 3.3.9. *)
 let comparison_refines_canonical_value (v: value)
   : Lemma (Input.comparison_value v == CellSemantics.canonical_value v) =
   match v with
@@ -339,8 +368,9 @@ let comparison_refines_canonical_value (v: value)
   | VariableValue fields -> field_normalization_refines fields
   | _ -> ()
 
-(* The input's optional-value equality test is precisely semantic equivalence:
-   presence must match and present values are compared after canonicalization. *)
+(* The collapse equality check agrees with equality of the stored setting's
+   meaning. Missing and present values differ. Two present values compare
+   after empty-image normalization. This is not an order-metadata comparison. *)
 let optional_equality_refines_equivalence (p: parameter)
   (left: option (value_for p)) (right: option (value_for p))
   : Lemma (Input.optional_values_equal p left right == CellSemantics.equivalent p left right) =
@@ -350,6 +380,10 @@ let optional_equality_refines_equivalence (p: parameter)
     comparison_refines_canonical_value right
   | _ -> ()
 
+(* Every case must contain a value, and each must equal the supplied value
+   after empty-image normalization. Equal missing fields are not enough for
+   the preservation laws below. The empty list satisfies this scan, so those
+   laws separately require an existing owner position. *)
 let rec complete_uniform (values: list case_record) (p: common_parameter) (v: value_for p)
   : Tot bool =
   match values with
@@ -358,8 +392,9 @@ let rec complete_uniform (values: list case_record) (p: common_parameter) (v: va
     CellSemantics.equivalent p (CellSemantics.case_value entry.values p) (Some v) &&
     complete_uniform rest p v
 
-(* If every case value is equivalent to the same present value and the
-   reference is also equivalent to it, no case differs from that reference. *)
+(* If every case contains the same value as a present reference, the edit
+   scan finds no differing case. This helper connects the complete-value
+   premise to the comparison that decides how collapse chooses a common value. *)
 let rec uniform_comparison (values: list case_record) (p: common_parameter)
   (v: value_for p) (reference: option (value_for p))
   : Lemma
@@ -373,9 +408,9 @@ let rec uniform_comparison (values: list case_record) (p: common_parameter)
     uniform_comparison rest p v reference
 
 #push-options "--fuel 8 --ifuel 2"
-(* An axis-owned parameter is not reported as differing when every case on
-   its owner axis is equivalent to the same present value, even vacuously
-   when the axis is empty. *)
+(* Equal, present values on the owning axis do not trigger the differing-value
+   branch of collapse. An empty table also reports no differences, but that
+   alone cannot justify preserving a value because there is no case to read. *)
 let uniform_not_differing (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   : Lemma
     (requires (
@@ -391,8 +426,9 @@ let uniform_not_differing (input: layout) (p: common_parameter) (side: axis) (v:
     uniform_comparison (first :: rest) p v (Parameters.get_case_value first.values p)
 #pop-options
 
-(* In a uniformly valued case list, every in-range lookup is semantically
-   equivalent to the specified present value. *)
+(* In a table where every case contains the same setting, a valid coordinate
+   reads that value up to empty-image normalization. Collapse uses this to
+   relate the user's original case to the value returned to common. *)
 let rec uniform_at (values: list case_record) (p: common_parameter) (v: value_for p) (index: nat)
   : Lemma
     (requires (complete_uniform values p v /\ index < List.length values))
@@ -410,9 +446,10 @@ let rec uniform_at (values: list case_record) (p: common_parameter) (v: value_fo
     else
       uniform_at rest p v (index - 1)
 
-(* Neutralizing an axis preserves parameter sources, the exact opposite-axis
-   entries, and output format, case ownership, variable names, judging, and
-   worker count; the selected axis itself may change. *)
+(* Replacing an ownerless ordinary dimension with a neutral position changes
+   neither parameter sources nor the opposite table. It also leaves format,
+   case ownership, variable names, judging and worker count alone. This
+   supports the single-position rule in PRODUCT.md 3.1.10. *)
 let neutral_dimension_preserves_sources (input: layout) (side: axis)
   (allocation: string & list string) (counter: nat)
   : Lemma (
@@ -429,9 +466,10 @@ let neutral_dimension_preserves_sources (input: layout) (side: axis)
   | Rows
   | Columns -> ()
 
-(* Collapsing an axis-owned parameter whose cases all have a value equivalent
-   to v preserves that parameter up to semantic equivalence. An in-range
-   original owner coordinate is required; the new coordinates are arbitrary. *)
+(* Returning a setting to common retains its value when every owning case
+   contains the same complete value. The original owner coordinate must exist.
+   The new common value can be read at any coordinates. Equality allows absent
+   versus empty image lists. PRODUCT.md 3.1.10 and 3.3.9. *)
 let collapse_retains_complete_uniform_value (input: layout) (p: common_parameter)
   (side: axis) (v: value_for p) (allocation: string & list string) (counter: nat)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat)
@@ -480,9 +518,10 @@ let collapse_retains_complete_uniform_value (input: layout) (p: common_parameter
       | Rows
       | Columns -> ()
 
-(* MoveToCommon retains the moved parameter up to semantic equivalence when
-   all owner-axis cases are equivalent to v and the original owner coordinate
-   exists, regardless of the coordinates used after the move. *)
+(* MoveToCommon retains the setting when all its owning cases contain the
+   same complete value and the original owner position exists. The returned
+   shared value no longer depends on coordinates. This covers the non-lossy
+   branch, not confirmation of differing values. PRODUCT.md 3.1.10. *)
 let move_to_common_retains_complete_uniform_value (input: layout) (p: common_parameter)
   (side: axis) (v: value_for p) (prefix: string) (counter: nat)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat)
@@ -499,22 +538,29 @@ let move_to_common_retains_complete_uniform_value (input: layout) (p: common_par
   collapse_retains_complete_uniform_value input p side v (prefix, Input.case_ids input) counter
     row column next_row next_column
 
-(* Mapping any total function over a list preserves its length. *)
+(* Adding or removing one field in each case does not change the number of
+   cases. This general list fact lets the collapse proofs keep coordinates
+   when the edit leaves a dimension's positions in place. *)
 let rec map_length #a #b (f: a -> Tot b) (values: list a)
   : Lemma (List.length (List.map f values) == List.length values) =
   match values with
   | [] -> ()
   | _ :: rest -> map_length f rest
 
+(* A surviving dimension keeps its coordinate. If removing its last setting
+   replaces an ordinary dimension with one neutral position, use position
+   zero instead. These helpers relate cells before and after that shape
+   change. They do not search by case ID. PRODUCT.md 3.1.10. *)
 let corresponding_row (before: layout) (after: layout) (row: nat) : Tot nat =
   if List.length before.rows = List.length after.rows then row else 0
 
 let corresponding_column (before: layout) (after: layout) (column: nat) : Tot nat =
   if List.length before.columns = List.length after.columns then column else 0
 
-(* Collapsing an axis-owned parameter leaves every different common parameter
-   exactly resolved as before at the corresponding coordinates: retain each
-   coordinate when its dimension's length is unchanged, otherwise use zero. *)
+(* Returning one setting to a shared control leaves the other parameter
+   values unchanged at the corresponding cell. Keep a coordinate when its
+   dimension length stays the same. Otherwise use the neutral position.
+   This still holds when the returned setting loses differing values. *)
 let collapse_preserves_other_parameter (input: layout) (p: common_parameter)
   (side: axis) (allocation: string & list string) (counter: nat) (q: common_parameter)
   (row: nat) (column: nat)
@@ -587,9 +633,10 @@ let collapse_preserves_other_parameter (input: layout) (p: common_parameter)
       | Columns, Columns -> ()
     )
 
-(* If the owner-axis cases are uniformly equivalent to v and the original
-   owner coordinate exists, collapse preserves every common parameter up to
-   semantic equivalence at the corresponding coordinates. *)
+(* If all owning cases contain the same complete value and this cell's owning
+   case exists, returning to a shared control keeps every chosen parameter
+   value. An empty image list can become an absent list. No attachment is
+   lost. PRODUCT.md 3.1.10 and 3.3.9. *)
 let collapse_preserves_every_parameter (input: layout) (p: common_parameter)
   (side: axis) (v: value_for p) (allocation: string & list string) (counter: nat)
   (q: common_parameter) (row: nat) (column: nat)
@@ -611,9 +658,10 @@ let collapse_preserves_every_parameter (input: layout) (p: common_parameter)
   else
     collapse_preserves_other_parameter input p side allocation counter q row column
 
-(* MoveToCommon preserves every common parameter up to semantic equivalence
-   at the corresponding coordinates, provided the moved parameter is
-   axis-owned, its cases are uniformly equivalent to v, and its index exists. *)
+(* Dispatching MoveToCommon keeps each chosen parameter value when every
+   owning case contains the same complete value. The old cell must have an
+   owning case. The later proof also checks how those templates read
+   variable fields. PRODUCT.md 3.1.10. *)
 let move_to_common_preserves_every_parameter (input: layout) (p: common_parameter)
   (side: axis) (v: value_for p) (prefix: string) (counter: nat)
   (q: common_parameter) (row: nat) (column: nat)
@@ -630,8 +678,9 @@ let move_to_common_preserves_every_parameter (input: layout) (p: common_paramete
         (CellSemantics.resolve input row column q))) =
   collapse_preserves_every_parameter input p side v (prefix, Input.case_ids input) counter q row column
 
-(* Updating a different common parameter's source leaves this parameter's
-   resolved value exactly unchanged at the same coordinates. *)
+(* Changing another setting's shared value or owner cannot change this
+   setting's stored value at the same cell. Ownership proofs use this to
+   separate a source-tag edit from the settings it does not address. *)
 let resolve_ignores_other_source (input: layout) (p: common_parameter)
   (q: common_parameter) (source: source q) (row: nat) (column: nat)
   : Lemma
@@ -643,8 +692,9 @@ let resolve_ignores_other_source (input: layout) (p: common_parameter)
   source_projection input.parameters p;
   source_projection (Parameters.set_source input.parameters q source) p
 
-(* Writing a value for a different parameter into every case on one axis
-   leaves this common parameter's resolved value exactly unchanged. *)
+(* Writing another setting into all cases on an axis leaves this setting's
+   stored value unchanged at the same cell. This helper reasons about fields,
+   not expanded templates that might consume variable fields. *)
 let resolve_ignores_other_case_fields (input: layout) (p: common_parameter)
   (v: value) (side: axis) (row: nat) (column: nat)
   : Lemma
@@ -677,8 +727,10 @@ let resolve_ignores_other_case_fields (input: layout) (p: common_parameter)
       | Rows
       | Columns -> ()
 
-(* A message with no image list and the same message with an explicitly empty
-   image list are semantically equivalent as input values. *)
+(* A message without images means the same input as the otherwise identical
+   message with an empty image list. This storage distinction must not make
+   equal complete inputs appear different on return to common.
+   PRODUCT.md 3.3.9. *)
 let empty_message_images_are_equivalent (role: role) (content: string) (rest: list message)
   : Lemma (
     CellSemantics.equivalent PInput
@@ -694,8 +746,10 @@ let empty_message_images_are_equivalent (role: role) (content: string) (rest: li
       } :: rest)))) =
   ()
 
-(* Canonicalization is the identity for values other than generator input and
-   variable fields; these other kinds are compared without normalization. *)
+(* Only generator inputs and variable fields receive empty-image
+   normalization. Other values, such as model IDs and judge criteria, compare
+   exactly as stored. Collapse cannot use that normalization to erase a real
+   difference in those settings. *)
 let non_image_values_are_exact (v: value)
   : Lemma
     (requires (value_parameter v <> PInput /\ value_parameter v <> PVariable))
@@ -705,9 +759,10 @@ let non_image_values_are_exact (v: value)
   | VariableValue _ -> ()
   | _ -> ()
 
-(* Taking ownership of a common value on a nonempty axis preserves every
-   different parameter's indexed case field exactly, including missing fields
-   and out-of-range lookups. *)
+(* Copying a shared setting into a nonempty table leaves each other case field
+   unchanged, including its absence. The proof covers every list index,
+   so missing coordinates remain missing too. This is the field-level fact
+   needed to show that variable bindings survive the move. *)
 let own_keeps_other_case_fields (input: layout) (p: common_parameter) (side: axis)
   (v: value_for p) (allocation: string & list string) (counter: nat) (q: parameter) (index: nat)
   : Lemma
@@ -729,8 +784,10 @@ let own_keeps_other_case_fields (input: layout) (p: common_parameter) (side: axi
   | Rows
   | Columns -> ()
 
-(* Neutralizing an axis either preserves its entries exactly or leaves a
-   singleton axis, and always preserves the opposite axis exactly. *)
+(* Neutralization keeps the selected axis's existing cases or leaves exactly
+   one position. The opposite axis stays untouched. The code only reduces an
+   ordinary axis with no remaining setting, never an active case table.
+   PRODUCT.md 3.1.10. *)
 let neutral_dimension_shape (input: layout) (side: axis)
   (allocation: string & list string) (counter: nat)
   : Lemma (
@@ -752,9 +809,10 @@ let neutral_dimension_shape (input: layout) (side: axis)
        | Rows
        | Columns -> ())
 
-(* Every originally valid row and column maps to valid coordinates after
-   collapse, keeping each index when that dimension's length is unchanged
-   and using zero otherwise. *)
+(* Every cell that existed before collapse has valid corresponding
+   coordinates afterward. Unchanged dimensions keep their indices. A dimension
+   reduced to one neutral position uses zero. This proves coordinate validity,
+   not equality of values after a lossy collapse. PRODUCT.md 3.1.10. *)
 let collapse_correspondence_is_valid (input: layout) (p: common_parameter)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat)
   : Lemma
@@ -808,8 +866,9 @@ let collapse_correspondence_is_valid (input: layout) (p: common_parameter)
     | Rows
     | Columns -> ()
 
-(* Setting a value throughout a case list preserves the optional case ID and
-   name pair at every index, including absent out-of-range entries. *)
+(* Copying a setting into cases leaves each case ID and user-assigned name
+   at the same list position. This indexed helper connects the field update
+   to the identity-preservation law below. *)
 let rec mapped_set_identity (values: list case_record) (v: value) (index: nat)
   : Lemma (
     (match Parameters.at
@@ -828,8 +887,9 @@ let rec mapped_set_identity (values: list case_record) (v: value) (index: nat)
     else
       mapped_set_identity rest v (index - 1)
 
-(* Taking ownership of a common value on a nonempty axis preserves the exact
-   case ID and name at each index; out-of-range lookups remain absent. *)
+(* Moving a shared setting into an existing, nonempty table does not replace
+   its cases or rename them. IDs and names stay at their original positions,
+   and out-of-range lookups stay absent. PRODUCT.md 3.1.10. *)
 let own_keeps_case_identity (input: layout) (p: common_parameter) (side: axis)
   (v: value_for p) (allocation: string & list string) (counter: nat) (index: nat)
   : Lemma
@@ -851,8 +911,9 @@ let own_keeps_case_identity (input: layout) (p: common_parameter) (side: axis)
   | Rows
   | Columns -> ()
 
-(* Taking ownership of one parameter leaves the semantic source of every
-   different common parameter exactly unchanged. *)
+(* Moving one setting to cases leaves every other setting's source tag
+   alone. A neighboring setting therefore stays shared or keeps its own row
+   or column owner rather than following the moved setting. *)
 let own_keeps_other_sources (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat) (q: common_parameter)
   : Lemma

@@ -1,5 +1,10 @@
 module Slopgrid.TransposeLayoutProofs
 
+(* First select a cell's parameter from its common, row, or column owner.
+   Swapping moves that owner and rewrites template text together. Expansion
+   happens later: a row-owned prompt can still read a column variable.
+   PRODUCT.md 3.1.4, 3.1.12, and 3.3.9. *)
+
 module Input = Slopgrid.Input
 module CellSemantics = Slopgrid.CellSemantics
 module List = FStar.List.Tot.Base
@@ -18,8 +23,8 @@ let rewrite_owner (rename: string -> Tot string) (#p: common_parameter)
   | Common value -> Common (Input.rewrite_value rename value)
   | OnAxis side -> OnAxis side
 
-(* Projecting a parameter from rewritten case values equals rewriting its
-   optional projected value; an absent value stays absent. *)
+(* Reading one parameter from a rewritten case returns its rewritten old
+   value. A missing setting stays missing rather than becoming a default. *)
 let rewrite_case_projection (rename: string -> Tot string) (values: case_values)
   (p: common_parameter)
   : Lemma
@@ -29,8 +34,8 @@ let rewrite_case_projection (rename: string -> Tot string) (values: case_values)
   | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
   | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem -> ()
 
-(* Source lookup commutes with reference rewriting: common values are
-   rewritten, axis owners are unchanged, and absent sources remain absent. *)
+(* Rewriting a common prompt or judge text keeps its common owner. Row and
+   column owners stay put until the separate axis-exchange step. *)
 let rewrite_source_projection (rename: string -> Tot string) (sources: parameter_sources)
   (p: common_parameter)
   : Lemma
@@ -42,8 +47,9 @@ let rewrite_source_projection (rename: string -> Tot string) (sources: parameter
   | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
   | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem -> ()
 
-(* Rewriting case values in every entry preserves indexed lookup: a found
-   record differs only by the specified value rewrite, and absence is preserved. *)
+(* Rewrite every case in place without changing case order. Looking up a
+   case still finds that same record with only its template-bearing values
+   rewritten, or still finds no case at an out-of-range index. *)
 let rec rewritten_entry (rename: string -> Tot string) (entries: list case_record) (index: nat)
   : Lemma
     (CellSemantics.entry_at
@@ -61,8 +67,8 @@ let rec rewritten_entry (rename: string -> Tot string) (entries: list case_recor
     else
       rewritten_entry rename rest (index - 1)
 
-(* Projecting a parameter at an axis index after reference rewriting equals
-   rewriting the original optional axis value. *)
+(* At one case index, read the same parameter after rewriting its template
+   references. This compares the selected value before variable expansion. *)
 let rewrite_axis_projection (input: layout) (rename: string -> Tot string) (side: axis)
   (index: nat) (p: common_parameter)
   : Lemma
@@ -75,8 +81,9 @@ let rewrite_axis_projection (input: layout) (rename: string -> Tot string) (side
   | None -> ()
   | Some entry -> rewrite_case_projection rename entry.values p
 
-(* Resolving a parameter at fixed coordinates commutes with reference
-   rewriting, including missing sources or axis values. *)
+(* Choose the complete parameter value from its owner before comparing
+   rewritten text. Missing owners and missing case values stay missing.
+   No variable field can supply a different parameter owner. *)
 let rewrite_resolution (input: layout) (rename: string -> Tot string) (row: nat) (column: nat)
   (p: common_parameter)
   : Lemma
@@ -88,8 +95,8 @@ let rewrite_resolution (input: layout) (rename: string -> Tot string) (row: nat)
   | Some (OnAxis Rows) -> rewrite_axis_projection input rename Rows row p
   | Some (OnAxis Columns) -> rewrite_axis_projection input rename Columns column p
 
-(* Source projection after swapping sources preserves common values and
-   absence, and flips the owner of each axis-owned parameter. *)
+(* The swap keeps common settings common and moves each case-owned parameter
+   to the other axis. It does not fill in absent optional settings. *)
 let swap_source_projection (sources: parameter_sources) (p: common_parameter)
   : Lemma
     (CellSemantics.source_for (Input.swap_sources sources) p ==
@@ -100,8 +107,9 @@ let swap_source_projection (sources: parameter_sources) (p: common_parameter)
   | PInput | PModel | PEffort | PSize | PAspectRatio | PQuality | PBackground
   | PJudgeModel | PJudgeEffort | PJudgeCriteria | PJudgeSystem -> ()
 
-(* A parameter value at a given axis index moves to the opposite axis at
-   the same index, with references rewritten by the layout's swap renamer. *)
+(* A row case becomes the column case at the same index, and vice versa.
+   Its parameter value moves with it, with prompt and judge references
+   rewritten for the moved fields. PRODUCT.md 3.1.12. *)
 let swap_axis_projection (input: layout) (side: axis) (index: nat) (p: common_parameter)
   : Lemma
     (CellSemantics.axis_value (Input.swap input) (Input.other_side side) index p ==
@@ -110,9 +118,10 @@ let swap_axis_projection (input: layout) (side: axis) (index: nat) (p: common_pa
   match side with
   | Rows | Columns -> ()
 
-(* Resolving a parameter after transposition at exchanged row/column
-   coordinates equals rewriting the original optional resolved value.
-   This is a resolution claim, not equality of all layout metadata. *)
+(* Read the old cell's selected parameter at exchanged coordinates.
+   The result differs only by rewritten template references, before expansion.
+   This is why selection must precede expansion. A row-owned prompt may read
+   column fields. This is not equality of layout metadata. PRODUCT.md 3.1.4. *)
 let swap_coordinate_correspondence (input: layout) (row: nat) (column: nat) (p: common_parameter)
   : Lemma
     (CellSemantics.resolve (Input.swap input) column row p ==
@@ -124,16 +133,19 @@ let swap_coordinate_correspondence (input: layout) (row: nat) (column: nat) (p: 
   | Some (OnAxis Rows) -> swap_axis_projection input Rows row p
   | Some (OnAxis Columns) -> swap_axis_projection input Columns column p
 
-(* Transposition leaves output format, judging settings, and parallel worker
-   count exactly unchanged. *)
+(* Swapping axes does not change the output format, judging toggle/settings
+   record, or requested worker count. Axis-owned judge values are handled
+   separately by parameter resolution, not by this global-settings claim. *)
 let swap_preserves_global_settings (input: layout)
   : Lemma
     ((Input.swap input).output_format == input.output_format /\
       (Input.swap input).judging == input.judging /\
       (Input.swap input).parallel_workers == input.parallel_workers) = ()
 
-(* The first-entry variable-field list moves unchanged to the opposite
-   axis under transposition, including its absent-field positions. *)
+(* The first case's field slots move unchanged to the other axis.
+   Deleted slots remain empty at the same indexes, keeping numbered gaps.
+   Field contents are literal data, not reference-rewrite targets.
+   PRODUCT.md 3.3.4 and 3.3.7. *)
 let variable_fields_swap (input: layout) (side: axis)
   : Lemma
     (VariableSemantics.fields (Input.swap input) (Input.other_side side) ==
@@ -142,8 +154,10 @@ let variable_fields_swap (input: layout) (side: axis)
   | Rows | Columns -> ()
 
 #push-options "--fuel 4"
-(* Looking up a variable field after exchanging coordinates and flipping
-   its axis returns the exact same optional field at the same field index. *)
+(* Field values come from the row case for a row field and the column case
+   for a column field. Flip both the field axis and cell coordinates to read
+   the same optional field, with its text and images untouched.
+   PRODUCT.md 3.3.7. *)
 let variable_field_at_swap (input: layout) (row: nat) (column: nat) (side: axis) (index: nat)
   : Lemma
     (VariableSemantics.field_at (Input.swap input) column row (Input.other_side side) index ==

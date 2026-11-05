@@ -4,12 +4,13 @@ module List = FStar.List.Tot.Base
 
 type byte = n: nat { n < 256 }
 
-(* Trusted native model: strings are represented by byte sequences. The
-   contracts below are assumptions about native bindings, not checked proofs. *)
+(* Template proofs read OCaml strings as byte lists. The OCaml and JavaScript
+   code supplies these operations. F* assumes the contracts below. It does
+   not check those native implementations. *)
 val byte_view : string -> GTot (list byte)
 
-(* Trusted inverse contract: constructing a string from bytes recovers exactly
-   those bytes, including sequences that are not valid UTF-8. *)
+(* Turn a byte list back into the same string bytes. The proof model also
+   needs this for byte slices that are not complete UTF-8 characters. *)
 val bytes_string : bytes: list byte -> GTot (text: string { byte_view text == bytes })
 
 let rec take_bytes (count: nat) (bytes: list byte) : Tot (list byte) =
@@ -24,20 +25,22 @@ let rec drop_bytes (count: nat) (bytes: list byte) : Tot (list byte) =
   | _ :: rest ->
     if count = 0 then bytes else drop_bytes (count - 1) rest
 
-(* Trusted injectivity assumption: strings with the same bytes are equal. *)
+(* The proofs can recover the same string from equal byte lists. This is an
+   assumption about native strings, not a theorem proved in this module. *)
 val byte_view_injective : left: string -> right: string ->
   Lemma
     (requires byte_view left == byte_view right)
     (ensures left == right)
 
-(* Trusted encoding assumption: the empty string has no bytes. *)
+(* An empty prompt contributes no bytes to the scanner. Native strings must
+   satisfy this base case. *)
 val empty_byte_view : unit -> Lemma (byte_view "" == [])
 
 let low_byte (character: FStar.Char.char) : Tot byte =
   FStar.Char.int_of_char character % 256
 
-(* Trusted ASCII encoding assumption: an all-ASCII string's byte view is its
-   character-code list, without a multibyte encoding change. *)
+(* ASCII names use their character codes as bytes. The rename proofs rely on
+   this for ROW and COLUMN. It does not make Unicode characters one byte long. *)
 val ascii_byte_view : text: string ->
   Lemma
     (requires List.for_all
@@ -45,22 +48,23 @@ val ascii_byte_view : text: string ->
       (FStar.String.list_of_string text))
     (ensures byte_view text == List.map low_byte (FStar.String.list_of_string text))
 
-(* Trusted length contract: native length counts bytes, not Unicode characters
-   or JavaScript UTF-16 code units. *)
+(* The scanner's offsets count UTF-8 bytes. JavaScript string length counts
+   UTF-16 code units instead, so it cannot replace this operation. *)
 val length : text: string -> Tot (count: nat { count == List.length (byte_view text) })
 
-(* Trusted slicing contract: slicing takes the requested bytes after dropping
-   the start offset, with list-style truncation at either bound. *)
+(* Read at most count bytes after the start offset. A slice near the end of
+   the prompt may be shorter, and an offset past the end gives an empty slice. *)
 val slice : text: string -> start: nat -> count: nat ->
   Tot (result: string { byte_view result == take_bytes count (drop_bytes start (byte_view text)) })
 
-(* Trusted indexing contract: character access returns a one-byte string, or
-   the empty string when the byte index is past the end. *)
+(* Despite its name, this reads one byte, not one Unicode character. Rewriting
+   walks those bytes without changing literal prompt text. Past the end it
+   returns an empty string. *)
 val char_at : text: string -> index: nat ->
   Tot (result: string { byte_view result == take_bytes 1 (drop_bytes index (byte_view text)) })
 
-(* Trusted byte lookup contract: an in-range index returns that byte's code;
-   an out-of-range index returns -1. *)
+(* The token scanner gets a byte code here. Past the end it gets -1, so a
+   reference at the end of the prompt needs no extra character after it. *)
 val byte_at : text: string -> index: nat ->
   Tot (result: int {
     result ==
@@ -75,8 +79,8 @@ val lower : string -> Tot string
 
 val replace_all : string -> string -> string -> Tot string
 
-(* Trusted prefix contract: prefix testing agrees with equality of the leading
-   bytes, including the empty-prefix and too-short-string cases. *)
+(* Prefix tests compare the actual bytes. An empty prefix matches. A longer
+   prefix cannot match a shorter string. *)
 val starts_with : text: string -> prefix: string ->
   Tot (result: bool {
     result == (take_bytes (List.length (byte_view prefix)) (byte_view text) == byte_view prefix)
@@ -88,8 +92,8 @@ val parse_nat : string -> Tot (option nat)
 
 val nat_string : nat -> Tot string
 
-(* Trusted concatenation contract: concatenating strings appends their byte
-   sequences without changing either operand's bytes. *)
+(* Join string bytes without decoding or rewriting them. The template proofs
+   use this contract when they rebuild literal text around a renamed token. *)
 val concat : left: string -> right: string ->
   Tot (result: string { byte_view result == List.append (byte_view left) (byte_view right) })
 
@@ -105,9 +109,9 @@ let unicode_alphanumeric_prefix (bytes: list byte) : GTot bool =
       (first >= 97 && first <= 122)
     else unicode_nonascii_alphanumeric_prefix bytes
 
-(* Trusted Unicode locality assumption: adding an ASCII non-alphanumeric
-   delimiter and any suffix cannot change whether a byte sequence starts with
-   an alphanumeric character. *)
+(* Appending an ASCII separator and more text cannot change whether the prefix
+   starts with a letter or digit. This assumed rule lets the proofs inspect
+   one dollar-delimited part without depending on the later template text. *)
 val unicode_prefix_delimiter : prefix: list byte ->
   delimiter: byte {
     delimiter < 128 /\
@@ -121,8 +125,10 @@ val unicode_prefix_delimiter : prefix: list byte ->
       unicode_alphanumeric_prefix prefix
   )
 
-(* Trusted classifier contract: native alphanumeric testing at a byte offset
-   agrees with the Unicode prefix model for the remaining bytes. *)
+(* Check the text after a candidate token with the native Unicode classifier.
+   This is how the scanner leaves lookalikes such as $ROW1suffix as literal
+   text rather than replacing only their ROW1 prefix. PRODUCT.md 3.3.4.
+   The agreement with the byte model remains a trusted contract. *)
 val unicode_alphanumeric_at : text: string -> index: nat ->
   Tot (result: bool {
     result == unicode_alphanumeric_prefix (drop_bytes index (byte_view text))

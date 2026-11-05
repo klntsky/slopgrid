@@ -1,5 +1,10 @@
 module Slopgrid.PolicyAdmission
 
+(* Admission checks editable form data before it can become a submission.
+   Check ownership and raw history structure first, then validate every cell's
+   expanded generator input and selected rubric. No inference runs here.
+   PRODUCT.md 3.3.6 and 3.4.1. *)
+
 module Domain = Slopgrid.Domain
 open Slopgrid.Domain
 module List = FStar.List.Tot.Base
@@ -10,10 +15,16 @@ module Parameters = Slopgrid.Parameters
 module PolicyBase = Slopgrid.PolicyBase
 module PolicyVariables = Slopgrid.PolicyVariables
 
+(* An empty ordinary model selection can remain quiet until Generate is tried.
+   It still prevents a ready submission. Deferral affects when feedback appears,
+   not whether the missing selection is acceptable. *)
 let deferred_issue (message: string) (path: list Domain.path_segment)
   : Tot Domain.validation_issue =
   {(PolicyBase.issue message path) with deferred = true}
 
+(* A rubric belongs to the selected common, row, or column source.
+   Require every selected rubric to have questions. The criterion type already
+   carries each expected answer as a boolean. PRODUCT.md 3.8.5 and 3.8.6. *)
 let criteria_issues (criteria: list Domain.criterion) : Tot (list Domain.validation_issue) =
   (if criteria = [] then [PolicyBase.issue "Add at least one criterion." []] else []) @
   PolicyBase.flatmap
@@ -24,6 +35,9 @@ let criteria_issues (criteria: list Domain.criterion) : Tot (list Domain.validat
           [Domain.Index i; Domain.Property "text"]])
     (PolicyBase.indexed criteria)
 
+(* Validate the supplied history, not a conversation with generated answers.
+   User messages may contain only images, but unfilled messages must stay empty
+   and need a supplied message before the first blank. PRODUCT.md 1.1.3. *)
 let chat_issues (messages: list Domain.message) : Tot (list Domain.validation_issue) =
   if messages = [] then [PolicyBase.issue "Add a message." []]
   else
@@ -57,6 +71,9 @@ let chat_issues (messages: list Domain.message) : Tot (list Domain.validation_is
        else []
      | None -> [])
 
+(* Local validators report paths within one input or rubric. Prefix the chosen
+   owner's path without replacing message or question indices, so common and
+   case-owned failures identify the same kind of field. PRODUCT.md 3.4.2. *)
 let prepend (path: list Domain.path_segment) (item: Domain.validation_issue)
   : Tot Domain.validation_issue =
   {item with issue_path = path @ item.issue_path}
@@ -78,6 +95,9 @@ let normalize_value (v: Domain.value) : Tot (Domain.value_for (Domain.value_para
   | Domain.BackgroundValue s -> Domain.BackgroundValue (Native.trim s)
   | _ -> v
 
+(* Trim identifiers, setting labels, and criterion questions for admission.
+   Leave prompt bodies and variable values alone: their whitespace is input
+   text, not a label to clean up. PRODUCT.md 1.1.3. *)
 let normalize (g: Domain.layout) : Tot Domain.layout =
   let parameters =
     List.fold_left
@@ -196,6 +216,9 @@ let parameter_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
               (PolicyBase.values g p))
     PolicyBase.kinds
 
+(* The selected source is the only owner. Reject leftover values on another
+   axis rather than treating them as a fallback when the owner is incomplete.
+   Judge parameters use the same rule. PRODUCT.md 3.3.1 and 3.8.9. *)
 let ownership_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   PolicyBase.flatmap
     (fun side ->
@@ -238,6 +261,9 @@ let message_text (ms: list Domain.message) (i: nat) : Tot string =
   | None -> ""
   | Some m -> m.content
 
+(* Raw validation catches roles and history shape before variable expansion.
+   Defer supplied-message emptiness to the expanded cell checks: an image-only
+   variable substitution can make a user message valid. PRODUCT.md 3.3.6. *)
 let raw_input_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   PolicyBase.flatmap #(nat & option (Domain.value_for Domain.PInput)) #Domain.validation_issue
     (fun (index, value) ->
@@ -277,6 +303,10 @@ let raw_criteria_issues (g: Domain.layout) : Tot (list Domain.validation_issue) 
           (criteria_issues cs))
       (PolicyBase.values g Domain.PJudgeCriteria)
 
+(* Report a bad expanded body at its owning message or question and at the
+   referenced fields that contributed to it. Keep the original template for
+   this lookup. Inserted field text is literal, not another template.
+   PRODUCT.md 3.3.4 and 3.4.2. *)
 let expanded_issue (g: Domain.layout) (row: nat) (column: nat) (path: list Domain.path_segment)
   (template: string) (item: Domain.validation_issue) : Tot (list Domain.validation_issue) =
   [prepend path item] @
@@ -287,6 +317,10 @@ let expanded_issue (g: Domain.layout) (row: nat) (column: nat) (path: list Domai
        (PolicyVariables.references template g row column)
    else [])
 
+(* A row-owned history or rubric may read column fields, so validation must
+   inspect every intersection. Validate questions after substitution as well
+   as messages, preserving each error's owning input path.
+   PRODUCT.md 3.3.6 and 3.8.9. *)
 let expanded_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   PolicyBase.flatmap
     (fun (row, _) ->
@@ -333,6 +367,9 @@ let budget_value (text: string) : Tot (option Number.finite) =
   let n = Number.parse text in
   if Native.trim text <> "" && Number.is_finite n then Some n else None
 
+(* Image generation ignores the text budget, even if a restored draft kept an
+   invalid budget string. Text formats require a finite positive amount here.
+   This does not calculate token allowances or parallelism. PRODUCT.md 3.5.1. *)
 let budget_issues (g: Domain.layout) (text: string) (budget: option Number.finite)
   : Tot (list Domain.validation_issue) =
   if g.output_format = Domain.Image then []
@@ -352,6 +389,9 @@ let budget_issues (g: Domain.layout) (text: string) (budget: option Number.finit
       [PolicyBase.issue (PolicyBase.cat "Invalid input: expected number, received " received)
         [Domain.Property "budgetUsd"]]
 
+(* Prepare a normalized submission record and report its issues separately.
+   Keep the original layout for editing previews. Neither returned candidate
+   permits submission until evaluate has rejected all remaining issues. *)
 let admit_input (input: Domain.draft_input)
   : Tot (Domain.layout & option Number.finite & option Domain.admitted_input &
          list Domain.validation_issue) =
@@ -363,6 +403,9 @@ let admit_input (input: Domain.draft_input)
     match budget with
     | Some n ->
       if Number.lt Number.zero n then Some n
+      (* The admitted record requires a positive budget even for Image.
+         Supply that required field without making an invalid text budget
+         block Image admission. PRODUCT.md 3.5.1. *)
       else if g.output_format = Domain.Image then Some (Number.small_positive 3)
       else None
     | None ->
@@ -379,6 +422,9 @@ let admit_input (input: Domain.draft_input)
   in
   (g, budget, admitted, issues)
 
+(* Supply one default record only for compatibility feedback on an unfinished
+   dimension. This does not add a case to the draft or make it admissible.
+   Completed layouts pass through with their real row-column intersections. *)
 let preview (g: Domain.layout) : Tot Domain.layout =
   List.fold_left
     (fun current side ->

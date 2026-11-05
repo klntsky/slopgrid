@@ -1,5 +1,10 @@
 module Slopgrid.SemanticTranspose
 
+(* Axis swaps must move fields and rewrite references without changing which
+   field a prompt or judge question reads. These proofs compare names and
+   coordinate lookups, including unknown names. They do not execute generation.
+   PRODUCT.md 3.1.4 and 3.3.7. *)
+
 module Input = Slopgrid.Input
 module Native = Slopgrid.Native
 module Template = Slopgrid.Template
@@ -35,6 +40,9 @@ let row_prefix : list byte = [82; 79; 87]
 
 let column_prefix : list byte = [67; 79; 76; 85; 77; 78]
 
+(* Only default-shaped names such as ROW12 exchange prefixes. ROW, ROW0, and
+   ROW01 stay unchanged here. Explicit custom names need the later collision
+   check even when they happen to look like a default. *)
 let numeric_swap (bytes: list byte) : Tot (list byte) =
   let prefix, target =
     if Native.take_bytes 3 bytes = row_prefix then
@@ -50,8 +58,8 @@ let numeric_swap (bytes: list byte) : Tot (list byte) =
   else
     bytes
 
-(* The string digit scan agrees with checking the requested number of bytes
-   after dropping the starting offset from the string's byte view. *)
+(* Match the runtime digit scan to the byte model used to recognize numbered
+   defaults. The starting offset skips the ROW or COLUMN prefix. *)
 let rec decimal_digits_model (fuel: nat) (text: string) (position: nat)
   : Lemma
     (Input.decimal_digits fuel text position ==
@@ -70,15 +78,15 @@ let rec decimal_digits_model (fuel: nat) (text: string) (position: nat)
         TemplateProofs.drop_successor (Native.byte_view text) position;
         decimal_digits_model (fuel - 1) text (position + 1))
 
-(* Checking exactly the byte-list length with the bounded digit predicate
-   is equivalent to checking every byte for an ASCII decimal digit. *)
+(* Scanning the whole suffix accepts exactly an all-decimal suffix.
+   This rules out exchanging a prefix of a custom-looking name. *)
 let rec full_digits (bytes: list byte)
   : Lemma (bounded_digits (List.length bytes) bytes == digits bytes) =
   match bytes with
   | [] -> ()
   | _ :: rest -> full_digits rest
 
-(* Taking at least as many bytes as the list contains returns the whole list. *)
+(* A slice long enough for the remaining name retains its entire suffix. *)
 let rec take_enough (count: nat) (bytes: list byte{count >= List.length bytes})
   : Lemma (Native.take_bytes count bytes == bytes) =
   match bytes with
@@ -86,8 +94,9 @@ let rec take_enough (count: nat) (bytes: list byte{count >= List.length bytes})
   | _ :: rest -> take_enough (count - 1) rest
 
 #push-options "--fuel 6 --ifuel 2"
-(* Numeric-name swapping on strings agrees with its byte-list model: only
-   ROW or COLUMN followed by a nonzero-leading decimal suffix is exchanged. *)
+(* The runtime numeric-name rewrite agrees with the byte model. It exchanges
+   ROW and COLUMN only with a nonzero-leading decimal suffix. This helper
+   does not yet protect explicit custom names. *)
 let numeric_swap_model (name: string)
   : Lemma
     (Native.byte_view (Input.swap_numeric_name name) == numeric_swap (Native.byte_view name)) =
@@ -123,8 +132,8 @@ let numeric_swap_model (name: string)
     ()
 #pop-options
 
-(* The prefix taken at an offset followed by the suffix dropped at that
-   offset reconstructs the original byte list. *)
+(* Reattach the name prefix and suffix when reasoning about numeric exchange.
+   No original name bytes disappear at the split. *)
 let rec take_drop (count: nat) (bytes: list byte)
   : Lemma
     (List.append (Native.take_bytes count bytes) (Native.drop_bytes count bytes) == bytes) =
@@ -133,8 +142,8 @@ let rec take_drop (count: nat) (bytes: list byte)
   | _ :: rest ->
     if count = 0 then () else take_drop (count - 1) rest
 
-(* Applying the byte-level ROW/COLUMN numeric-name exchange twice restores
-   the exact original bytes, including names that are left unchanged. *)
+(* Exchanging numbered prefixes twice recovers every original byte name.
+   Names outside that pattern stay unchanged on both calls. *)
 let numeric_swap_involution (bytes: list byte)
   : Lemma (numeric_swap (numeric_swap bytes) == bytes) =
   if Native.take_bytes 3 bytes = row_prefix then (
@@ -146,7 +155,8 @@ let numeric_swap_involution (bytes: list byte)
   else
     ()
 
-(* Applying the string numeric-name exchange twice restores the exact name. *)
+(* Transfer numeric exchange's two-call result back to runtime strings,
+   using Native's trusted byte equality contract. *)
 let swap_numeric_name_involution (name: string)
   : Lemma (Input.swap_numeric_name (Input.swap_numeric_name name) == name) =
   numeric_swap_model name;
@@ -154,16 +164,16 @@ let swap_numeric_name_involution (name: string)
   numeric_swap_involution (Native.byte_view name);
   Native.byte_view_injective (Input.swap_numeric_name (Input.swap_numeric_name name)) name
 
-(* A list consisting entirely of ASCII decimal digits satisfies the template
-   name-byte predicate; the empty list is allowed by this predicate. *)
+(* Decimal suffix bytes are legal inside a template name. This lets the
+   parser accept a default name after its ROW/COLUMN prefix changes. *)
 let rec digits_are_name (bytes: list byte{digits bytes})
   : Lemma (Template.name_bytes bytes) =
   match bytes with
   | [] -> ()
   | _ :: rest -> digits_are_name rest
 
-(* Concatenating two lists of valid template-name bytes preserves that
-   byte predicate, without asserting that either list is nonempty. *)
+(* Joining the replacement prefix to its decimal suffix keeps legal name
+   bytes. Nonemptiness comes from the prefix, not from this list helper. *)
 let rec names_append (left: list byte{Template.name_bytes left})
   (right: list byte{Template.name_bytes right})
   : Lemma (Template.name_bytes (List.append left right)) =
@@ -171,8 +181,8 @@ let rec names_append (left: list byte{Template.name_bytes left})
   | [] -> ()
   | _ :: rest -> names_append rest right
 
-(* Numeric-name exchange preserves both nonemptiness and valid name bytes
-   for a template identifier. *)
+(* Numeric exchange still produces one valid identifier. It cannot add a
+   delimiter that would change how a prompt is parsed. *)
 let numeric_identifier (name: Template.identifier)
   : Lemma (numeric_swap name <> [] /\ Template.name_bytes (numeric_swap name)) =
   if Native.take_bytes 3 name = row_prefix then (
@@ -192,9 +202,10 @@ let numeric_identifier (name: Template.identifier)
   else
     ()
 
-(* For a fixed input layout, collision-blocking renaming is an involution.
-   A numeric exchange is blocked when either name is an active custom name;
-   this does not assert that swapping the whole layout twice restores metadata. *)
+(* Freeze this layout's custom-name set and apply its name map twice.
+   A numeric exchange is blocked if either spelling is an active custom name.
+   The actual two-swap result is EffectiveCellProofs.cell_double_swap. It
+   compares cell meaning, not explicit-name bookkeeping. PRODUCT.md 3.3.7. *)
 let swap_rename_involution (input: layout) (name: string)
   : Lemma (Input.swap_rename input (Input.swap_rename input name) == name) =
   swap_numeric_name_involution name;
@@ -203,8 +214,8 @@ let swap_rename_involution (input: layout) (name: string)
      Input.member (Input.swap_numeric_name name) (Input.custom_variable_names input)
   then () else ()
 
-(* Equal results of collision-blocking renaming imply equal original names,
-   with the same input layout used for both renamings. *)
+(* With one fixed custom-name set, distinct old names cannot merge into one
+   rewritten name. Field search uses this fact to keep its first match. *)
 let swap_rename_injective (input: layout) (left: string) (right: string)
   : Lemma
     (requires Input.swap_rename input left == Input.swap_rename input right)
@@ -212,8 +223,8 @@ let swap_rename_injective (input: layout) (left: string) (right: string)
   swap_rename_involution input left;
   swap_rename_involution input right
 
-(* Applying the layout's collision-blocking string renamer through the
-   runtime byte adapter preserves a nonempty, valid template identifier. *)
+(* The collision check either keeps the old identifier or uses a valid numeric
+   exchange. The runtime-to-byte adapter therefore gives the parser one name. *)
 let swap_rename_identifier (input: layout) (name: Template.identifier)
   : Lemma
     (let renamed = TemplateProofs.runtime_rename (Input.swap_rename input) name in
@@ -225,14 +236,14 @@ let swap_rename_identifier (input: layout) (name: Template.identifier)
      Input.member (Input.swap_numeric_name text) (Input.custom_variable_names input)
   then () else ()
 
-(* Every valid identifier remains nonempty and contains only valid name
-   bytes after applying the layout's renamer through the runtime adapter. *)
+(* Supply the parser rewrite proof's valid-renamer assumption for every name
+   in this layout's swap, including names that do not resolve to a field. *)
 let swap_rename_valid (input: layout)
   : Lemma (TemplateProofs.valid_renamer (Input.swap_rename input)) =
   FStar.Classical.forall_intro (swap_rename_identifier input)
 
-(* The semantic and input-side zero-based list lookups agree, including
-   their None result for an out-of-range index. *)
+(* Field-name lookup uses the same list index in Input and VariableSemantics.
+   Both report absence past the end rather than inventing a field. *)
 let rec at_independent #a (values: list a) (index: nat)
   : Lemma (VariableSemantics.at values index == Input.at values index) =
   match values with
@@ -240,8 +251,8 @@ let rec at_independent #a (values: list a) (index: nat)
   | _ :: rest ->
     if index = 0 then () else at_independent rest (index - 1)
 
-(* Semantic name metadata is exactly the selected input name list after
-   converting an absent list to an empty list. *)
+(* Both modules read the same stored names for the chosen axis. An omitted
+   name list means no explicit names, not no variable fields. *)
 let names_independent (input: layout) (side: axis)
   : Lemma
     (VariableSemantics.names input side == Input.option_list (Input.name_fields input side)) =
@@ -257,15 +268,16 @@ let names_independent (input: layout) (side: axis)
        | None -> ()
        | Some _ -> ())
 
-(* Semantic and input-side effective names agree, including generated
-   defaults when there is no explicit name at the requested index. *)
+(* The proof and implementation choose the same effective name at a field
+   index, including the numbered default when no explicit name is stored. *)
 let name_independent (input: layout) (side: axis) (index: nat)
   : Lemma (VariableSemantics.name_at input side index == Input.variable_name input side index) =
   names_independent input side;
   at_independent (VariableSemantics.names input side) index
 
-(* Both variable-field projections select the same field list from the
-   first entry on the chosen axis, using an empty list when absent. *)
+(* Both modules use the first case's field list to find active field slots.
+   This compares that lookup rule. It does not prove all cases have matching
+   field lists. *)
 let fields_independent (input: layout) (side: axis)
   : Lemma (VariableSemantics.fields input side == Input.variable_fields input side) =
   if side = Rows then
@@ -283,7 +295,7 @@ let fields_independent (input: layout) (side: axis)
        | None -> ()
        | Some _ -> ())
 
-(* A successful input-side list lookup places the index within the list. *)
+(* A found field slot lies within the list that swap-name handling fills. *)
 let rec at_bound (#a: eqtype) (values: list a) (index: nat)
   : Lemma (requires Input.at values index <> None) (ensures index < List.length values) =
   match values with
@@ -291,8 +303,8 @@ let rec at_bound (#a: eqtype) (values: list a) (index: nat)
   | _ :: rest ->
     if index = 0 then () else at_bound rest (index - 1)
 
-(* Below the requested fill count, lookup in the filled optional-value list
-   returns the original entry, or a present None for a missing entry. *)
+(* Fill missing name entries up to the field count without shifting names.
+   A padded None still asks for that slot's numbered default. *)
 let rec at_fill_to #a (count: nat) (values: list (option a)) (index: nat)
   : Lemma
     (index < count ==> Input.at (Input.fill_to count values) index ==
@@ -307,8 +319,8 @@ let rec at_fill_to #a (count: nat) (values: list (option a)) (index: nat)
     | [] -> at_fill_to #a (count - 1) [] (index - 1)
     | _ :: rest -> at_fill_to (count - 1) rest (index - 1)
 
-(* Lookup after indexed mapping applies the mapping function to the
-   original entry with index start + index; missing entries remain missing. *)
+(* Building swapped names keeps each entry at its original field index.
+   The mapping receives the absolute index needed for the numbered default. *)
 let rec at_map_i_from #a #b (f: nat -> a -> Tot b) (start: nat) (values: list a)
   (index: nat)
   : Lemma
@@ -327,8 +339,8 @@ let name_projection (values: list (option string)) (index: nat) : Tot (option st
   | Some (Some name) -> Some name
   | _ -> None
 
-(* Removing trailing None names preserves every effective optional-name
-   projection, which treats both absent entries and None entries as unnamed. *)
+(* Dropping trailing None names cannot change any effective name lookup.
+   Missing entries and stored None entries both select numbered defaults. *)
 let rec trim_name_projection (values: list (option string)) (index: nat)
   : Lemma (name_projection (Input.trim_null_end values) index == name_projection values index) =
   match values with
@@ -342,9 +354,10 @@ let rec trim_name_projection (values: list (option string)) (index: nat)
        | Some _ -> ())
     | _ :: _ -> ()
 
-(* At a present variable field on a case-owning axis, the swapped name
-   metadata with its destination-axis default yields exactly the renamed
-   original effective name. No claim is made for inactive field positions. *)
+(* For an active field on a case axis, destination metadata gives exactly
+   the rewritten old name. A blocked default becomes explicit rather than
+   stealing a custom name or choosing a new number. Inactive slots are outside
+   this claim. PRODUCT.md 3.3.7. *)
 let swapped_name_at (input: layout) (side: axis) (index: nat)
   : Lemma
     (requires Parameters.is_case_axis input side /\
@@ -369,9 +382,9 @@ let swapped_name_at (input: layout) (side: axis) (index: nat)
   then () else ()
 
 #push-options "--fuel 6 --ifuel 2"
-(* The destination axis's semantic name list is exactly the source axis's
-   computed swap-name metadata with absence converted to an empty list.
-   Non-case axes retain their original list; this is not metadata involution. *)
+(* The destination receives the names computed for the source axis.
+   Non-case axes move their stored list without case-name processing.
+   This compares one swap's stored lists, not two-swap metadata equality. *)
 let swap_names_projection (input: layout) (side: axis)
   : Lemma
     (VariableSemantics.names (Input.swap input) (Input.other_side side) ==
@@ -385,8 +398,9 @@ let swap_names_projection (input: layout) (side: axis)
   | Some _, Some _ -> if side = Rows then () else ()
 #pop-options
 
-(* For a present variable field on a case-owning axis, transposition moves
-   its effective name to the opposite axis through collision-blocking renaming. *)
+(* An active field keeps its binding while moving to the opposite case axis.
+   Its new effective name follows the collision rule, not just its new axis
+   prefix. PRODUCT.md 3.3.7. *)
 let active_name_swap (input: layout) (side: axis) (index: nat)
   : Lemma
     (requires Parameters.is_case_axis input side /\
@@ -410,8 +424,8 @@ let rec field_suffix (fields: list (option variable_field)) (index: nat)
   | _ :: rest ->
     if index = 0 then fields else field_suffix rest (index - 1)
 
-(* Looking up an index in a field-list suffix equals looking up the sum of
-   its starting offset and that index in the original field list. *)
+(* Keep absolute field indexes while the name search advances through a
+   suffix. Deleted slots still occupy their original numbered position. *)
 let rec suffix_at (fields: list (option variable_field)) (start: nat) (index: nat)
   : Lemma
     (VariableSemantics.at (field_suffix fields start) index ==
@@ -421,9 +435,9 @@ let rec suffix_at (fields: list (option variable_field)) (start: nat) (index: na
   | _ :: rest ->
     if start = 0 then () else suffix_at rest (start - 1) index
 
-(* On a case-owning axis, searching the same field-list suffix for the
-   renamed name after transposition returns the original slot index.
-   The first matching present field remains the first match. *)
+(* Searching a case axis after the swap finds the same field index.
+   The search skips deleted slots and keeps the first matching active field.
+   Injective renaming prevents a later field from becoming an earlier match. *)
 let rec slot_in_swap (input: layout) (side: axis) (name: string) (start: nat)
   (fields: list (option variable_field){
     fields == field_suffix (VariableSemantics.fields input side) start})
@@ -451,8 +465,7 @@ let rec slot_in_swap (input: layout) (side: axis) (name: string) (start: nat)
     if field <> None && VariableSemantics.name_at input side start = name then
       ()
     else (
-      (* Advancing a field suffix by one drops its head, or leaves an
-         exhausted suffix empty. *)
+      (* Advance both name searches by one stored slot, even for a tombstone. *)
       let rec suffix_successor (values: list (option variable_field)) (index: nat)
         : Lemma
           (field_suffix values (index + 1) ==
@@ -472,8 +485,9 @@ let flip_slot (slot: option (axis & nat)) : Tot (option (axis & nat)) =
   | None -> None
   | Some (side, index) -> Some (Input.other_side side, index)
 
-(* Searching a case-owning axis after transposition and name renaming
-   preserves the slot index while flipping its axis, including failed lookup. *)
+(* Move a case axis's name lookup to the other axis without changing its
+   field index. A failed lookup stays failed after the name rewrite, so a
+   deleted reference does not acquire a new field. PRODUCT.md 3.3.4 and 3.3.7. *)
 let slot_on_swap (input: layout) (side: axis) (name: string)
   : Lemma
     (requires Parameters.is_case_axis input side)
@@ -484,9 +498,10 @@ let slot_on_swap (input: layout) (side: axis) (name: string)
   TransposeLayoutProofs.variable_fields_swap input side;
   slot_in_swap input side name 0 (VariableSemantics.fields input side)
 
-(* Whole-layout slot lookup commutes with transposition and name renaming:
-   the chosen axis flips and the index is unchanged. This respects both
-   first-match order within an axis and the case-ownership axis priority. *)
+(* Lookup follows case_ownership's first axis, then the other axis on failure.
+   Swapping flips that priority with the cases. It does not impose rows-first
+   lookup. The field index or unknown result stays the same. This is lookup
+   preservation, not full reference validation. PRODUCT.md 3.3.6 and 3.3.7. *)
 let slot_for_swap (input: layout) (name: string)
   : Lemma
     (VariableSemantics.slot_for (Input.swap input) (Input.swap_rename input name) ==
@@ -501,16 +516,18 @@ let slot_for_swap (input: layout) (name: string)
     | Rows
     | Columns -> ()
 
-(* Produce a valid template identifier exactly equal to the runtime byte
-   renaming of the original identifier. *)
+(* Package the runtime swap result as the valid identifier required by the
+   template parser. The byte spelling stays exactly the runtime spelling. *)
 let renamed_identifier (input: layout) (name: Template.identifier)
   : GTot (result: Template.identifier{
       result == TemplateProofs.runtime_rename (Input.swap_rename input) name}) =
   swap_rename_valid input;
   TemplateProofs.runtime_rename (Input.swap_rename input) name
 
-(* Resolving a renamed identifier at exchanged row/column coordinates in
-   the transposed layout returns exactly the original optional variable field. *)
+(* After finding a name's axis and slot, read its value from that cell's row
+   case or column case. Exchanging coordinates returns the same optional
+   field, including text and images. An unknown name stays unknown.
+   PRODUCT.md 3.3.6 and 3.3.7. *)
 let field_for_swap (input: layout) (row: nat) (column: nat) (name: Template.identifier)
   : Lemma
     (VariableSemantics.field_for (Input.swap input) column row (renamed_identifier input name) ==
@@ -523,8 +540,8 @@ let field_for_swap (input: layout) (row: nat) (column: nat) (name: Template.iden
   | None -> ()
   | Some (side, index) -> TransposeLayoutProofs.variable_field_at_swap input row column side index
 
-(* String membership in concatenated lists is the disjunction of membership
-   in either list. *)
+(* An explicit name collected on either axis participates in the collision
+   check over both axes. *)
 let rec member_append (name: string) (left: list string) (right: list string)
   : Lemma
     (Input.member name (List.append left right) ==
@@ -533,8 +550,8 @@ let rec member_append (name: string) (left: list string) (right: list string)
   | [] -> ()
   | _ :: rest -> member_append name rest right
 
-(* An explicit name paired with a present field at the same index belongs
-   to the custom-name collection built from those two lists. *)
+(* A stored custom name blocks collisions only when its field is present.
+   This links the active field slot to the collected custom-name set. *)
 let rec custom_names_member (fields: list (option variable_field)) (names: list (option string))
   (index: nat) (name: string)
   : Lemma
@@ -549,8 +566,9 @@ let rec custom_names_member (fields: list (option variable_field)) (names: list 
     if index = 0 then () else custom_names_member fields names (index - 1) name
   | _ -> ()
 
-(* An explicit name on a present field of a case-owning axis is fixed by
-   collision-blocking renaming, even when it resembles a generated name. *)
+(* Keep an active custom name unchanged even if it is spelled ROW1 or COLUMN1.
+   Default-looking spelling does not remove its explicit binding.
+   PRODUCT.md 3.3.7. *)
 let custom_name_fixed (input: layout) (side: axis) (index: nat) (name: string)
   : Lemma
     (requires Parameters.is_case_axis input side /\
@@ -566,9 +584,10 @@ let custom_name_fixed (input: layout) (side: axis) (index: nat) (name: string)
   | Rows
   | Columns -> ()
 
-(* An explicit name on a present field of a case-owning axis remains an
-   explicit, identical name at that index on the destination axis, not merely
-   an equal effective name obtained through a generated default. *)
+(* Move an active custom name as an explicit name, even when it equals the
+   destination's normal default. Equal spelling must not silently turn that
+   custom binding into a renamable default on the next swap.
+   PRODUCT.md 3.3.7. *)
 let explicit_custom_name_swap (input: layout) (side: axis) (index: nat) (name: string)
   : Lemma
     (requires Parameters.is_case_axis input side /\

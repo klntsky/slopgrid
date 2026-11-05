@@ -1,5 +1,9 @@
 module Slopgrid.CellMeaningProofs
 
+(* A cell's meaning records expanded input text, message roles and images, and
+   judge questions with their expected answers. These proofs compare those
+   values after edits, rather than requiring identical template source text. *)
+
 module Input = Slopgrid.Input
 module CellMeaning = Slopgrid.CellMeaning
 module Template = Slopgrid.Template
@@ -9,9 +13,10 @@ module Native = Slopgrid.Native
 module CellSemantics = Slopgrid.CellSemantics
 open Slopgrid.Domain
 
-(* A valid identifier renaming preserves expanded text bytes and ordered resolved
-   fields when the new environment maps every renamed identifier to its original
-   field. The claim is equality of meanings, not literal template strings. *)
+(* A valid rename keeps a prompt's expanded bytes if every renamed token still
+   finds its original field. The ordered field lookups stay equal too, so image
+   collection and missing-reference checks see the same fields.
+   This is the text part of PRODUCT.md 3.3.2. *)
 let text_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (content: string)
   : Lemma
@@ -22,9 +27,9 @@ let text_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rena
     (CellMeaning.field_bytes before) (CellMeaning.field_bytes after) content;
   TemplateProofs.rewrite_resolution rename before after content
 
-(* Rewriting message references with a valid renamer preserves the full message
-   meaning, including role and image projections, if renamed lookups return the
-   original fields. *)
+(* Renaming references keeps a message's role, expanded content, and attachments
+   unchanged when the renamed tokens find the same fields. That also keeps the
+   images contributed by references on that message. PRODUCT.md 3.3.2 and 3.3.4. *)
 let message_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (message: message)
   : Lemma
@@ -35,8 +40,9 @@ let message_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer r
       CellMeaning.message before message) =
   text_rewrite rename before after message.content
 
-(* Rewriting each message's references preserves the ordered list of message
-   meanings under a valid renamer and corresponding renamed-field lookups. *)
+(* Apply the same rename through the complete Chat history without moving
+   messages or changing their roles and images. Every renamed lookup must still
+   return its original field. PRODUCT.md 3.3.2. *)
 let rec messages_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (messages: list message)
   : Lemma
@@ -53,8 +59,9 @@ let rec messages_rewrite (rename: string -> Tot string{TemplateProofs.valid_rena
     message_rewrite rename before after message;
     messages_rewrite rename before after rest
 
-(* Rewriting a criterion's references preserves its text meaning, expected
-   answer, and derived images when a valid renaming preserves field lookups. *)
+(* Renaming a judge question keeps its expanded text and referenced images when
+   renamed lookups agree. Its expected YES/NO answer stays attached to that
+   question. PRODUCT.md 3.3.2. *)
 let criterion_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (criterion: criterion)
   : Lemma
@@ -65,8 +72,9 @@ let criterion_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer
       CellMeaning.criterion before criterion) =
   text_rewrite rename before after criterion.criterion_text
 
-(* Rewriting every criterion preserves the ordered list of criterion meanings
-   under a valid renamer and corresponding renamed-field lookups. *)
+(* Renaming references throughout a rubric keeps question order and each
+   question's text, images, and expected answer under the same lookup assumption.
+   PRODUCT.md 3.3.2. *)
 let rec criteria_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (criteria: list criterion)
   : Lemma
@@ -84,9 +92,9 @@ let rec criteria_rewrite (rename: string -> Tot string{TemplateProofs.valid_rena
     criterion_rewrite rename before after criterion;
     criteria_rewrite rename before after rest
 
-(* Rewriting references throughout a parameter value preserves its interpreted
-   meaning when identifier renaming is valid and the environments agree at
-   corresponding names; scalar values are unchanged. *)
+(* Rename references inside the selected input or judge setting, without
+   changing what the cell reads. Matching field lookups are required for text.
+   Scalar settings and literal field values do not change. PRODUCT.md 3.3.2. *)
 let value_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer rename})
   (before: CellMeaning.environment) (after: CellMeaning.environment) (value: value)
   : Lemma
@@ -100,8 +108,9 @@ let value_rewrite (rename: string -> Tot string{TemplateProofs.valid_renamer ren
   | ModelValue _ | EffortValue _ | SizeValue _ | AspectRatioValue _ | QualityValue _
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | VariableValue _ -> ()
 
-(* Pointwise-equal field environments produce identical expanded bytes and
-   ordered field-resolution results for a list of template byte parts. *)
+(* Expansion and reference collection use the same field lookups for each token.
+   Equal lookups therefore keep both the expanded bytes and the ordered fields
+   equal while this helper walks the split template. *)
 let rec parts_environment (before: CellMeaning.environment) (after: CellMeaning.environment)
   (parts: list (list Native.byte))
   : Lemma
@@ -118,8 +127,8 @@ let rec parts_environment (before: CellMeaning.environment) (after: CellMeaning.
     | None -> ()
     | Some (name, _) -> ()
 
-(* Pointwise-equal field environments give any text identical expanded bytes
-   and ordered resolved fields. *)
+(* A prompt or judge text reads the same bytes and fields when every lookup
+   returns the same field. No template rewrite is needed in this step. *)
 let text_environment (before: CellMeaning.environment) (after: CellMeaning.environment)
   (content: string)
   : Lemma
@@ -129,8 +138,8 @@ let text_environment (before: CellMeaning.environment) (after: CellMeaning.envir
   | [] -> ()
   | _ :: parts -> parts_environment before after parts
 
-(* Pointwise-equal field environments preserve the ordered list of interpreted
-   messages, including their content and image projections. *)
+(* Keeping all field lookups equal keeps the complete Chat history's meaning.
+   Message order, roles, direct attachments, and referenced images stay equal. *)
 let rec messages_environment (before: CellMeaning.environment) (after: CellMeaning.environment)
   (messages: list message)
   : Lemma
@@ -144,8 +153,8 @@ let rec messages_environment (before: CellMeaning.environment) (after: CellMeani
     text_environment before after message.content;
     messages_environment before after rest
 
-(* Pointwise-equal field environments preserve the ordered list of interpreted
-   criteria, including their text and derived images. *)
+(* The same field lookups keep a rubric's expanded questions and referenced
+   images equal. Each question keeps its position and expected YES/NO answer. *)
 let rec criteria_environment (before: CellMeaning.environment) (after: CellMeaning.environment)
   (criteria: list criterion)
   : Lemma
@@ -159,8 +168,9 @@ let rec criteria_environment (before: CellMeaning.environment) (after: CellMeani
     text_environment before after criterion.criterion_text;
     criteria_environment before after rest
 
-(* Pointwise-equal field environments preserve the interpreted meaning of any
-   parameter value, including values containing template text. *)
+(* Once a cell has selected a parameter value, identical field lookups leave its
+   meaning unchanged. This covers prompts and judge text as well as settings
+   with no template references. *)
 let value_environment (before: CellMeaning.environment) (after: CellMeaning.environment) (value: value)
   : Lemma
     (requires forall name. after name == before name)
@@ -172,8 +182,9 @@ let value_environment (before: CellMeaning.environment) (after: CellMeaning.envi
   | ModelValue _ | EffortValue _ | SizeValue _ | AspectRatioValue _ | QualityValue _
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | VariableValue _ -> ()
 
-(* Canonicalizing optional message image lists preserves all interpreted message
-   meanings; absent images and an explicitly empty image list mean the same thing. *)
+(* No attachment list and an explicitly empty list both mean no images on a
+   message. Normalizing that representation keeps the history's meaning, even
+   when text references add images separately. PRODUCT.md 3.3.9. *)
 let rec messages_canonical (env: CellMeaning.environment) (messages: list message)
   : Lemma
     (Template.map_g (CellMeaning.message env) (CellSemantics.normalize_messages messages) ==
@@ -188,8 +199,8 @@ let rec messages_canonical (env: CellMeaning.environment) (messages: list messag
       match images with
       | [] | _ :: _ -> ()
 
-(* Canonicalizing a common-capable parameter value preserves its interpreted
-   meaning in any field environment. *)
+(* Removing empty image lists does not change a prompt or Chat history's input.
+   Model choices and judge settings keep their stored values. PRODUCT.md 3.3.9. *)
 let value_canonical (env: CellMeaning.environment) (p: common_parameter) (value: value_for p)
   : Lemma
     (CellMeaning.value env (CellSemantics.canonical_value value) == CellMeaning.value env value) =
@@ -199,9 +210,10 @@ let value_canonical (env: CellMeaning.environment) (p: common_parameter) (value:
   | BackgroundValue _ | JudgeModelValue _ | JudgeEffortValue _ | JudgeCriteriaValue _
   | JudgeSystemValue _ -> ()
 
-(* Semantically equivalent optional values of the same common-capable parameter
-   yield identical optional meanings in pointwise-equal environments. This does
-   not require literal equality of their unnormalized image-list metadata. *)
+(* Values treated as equal for returning a case parameter to common have the
+   same meaning when field lookups agree. Empty image-list representation may
+   differ, but a missing value is not an empty input. This supports value
+   comparison, not the whole conversion. PRODUCT.md 3.1.10 and 3.3.9. *)
 let equivalent_values (before: CellMeaning.environment) (after: CellMeaning.environment)
   (p: common_parameter) (left: option (value_for p)) (right: option (value_for p))
   : Lemma

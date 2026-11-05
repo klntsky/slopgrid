@@ -6,6 +6,10 @@ module Template = Slopgrid.Template
 open Slopgrid.Domain
 open Prims
 
+(* Find a variable's field without calling the form's lookup code. The proofs
+   use this separate description to check that renaming and swapping keep the
+   same field bound to each prompt reference. PRODUCT.md 3.3.2 and 3.3.7. *)
+
 let other (side: axis) : Tot axis =
   match side with
   | Rows -> Columns
@@ -31,6 +35,11 @@ let name_at (input: layout) (side: axis) (index: nat) : Tot string =
   match at (names input side) index with
   | Some (Some name) -> name
   | _ -> default_name side index
+
+(* All cases on a valid axis have the same active field slots. The first case
+   supplies that slot list. The selected cell's case supplies each field's
+   text and images. A None slot is a deleted field, not an empty live field.
+   PRODUCT.md 3.3.4 and 3.3.6. *)
 
 let fields (input: layout) (side: axis) : Tot (list (option variable_field)) =
   match CellSemantics.axis_entries input side with
@@ -59,6 +68,10 @@ let slot_on (input: layout) (side: axis) (name: string) : Tot (option (axis & na
   | None -> None
   | Some index -> Some (side, index)
 
+(* Search active case axes in their saved order. Generation rejects duplicate
+   names, but a proof must still describe lookup in an unfinished or invalid
+   draft. In that draft, the first matching slot wins. PRODUCT.md 3.3.2. *)
+
 let slot_for (input: layout) (name: string) : Tot (option (axis & nat)) =
   match input.case_ownership with
   | NoCaseAxes -> None
@@ -67,6 +80,10 @@ let slot_for (input: layout) (name: string) : Tot (option (axis & nat)) =
     (match slot_on input first name with
      | None -> slot_on input (other first) name
      | Some slot -> Some slot)
+
+(* After finding the named slot, read its value from this cell's row or column
+   case. A field on another case must not supply replacement text here.
+   PRODUCT.md 3.3.4 and 3.3.9. *)
 
 let field_at (input: layout) (row: nat) (column: nat) (side: axis) (index: nat)
   : Tot (option variable_field) =

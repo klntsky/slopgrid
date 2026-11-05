@@ -1,5 +1,10 @@
 module Slopgrid.Parameters
 
+(* A setting is shared by the grid or owned by its row or column cases.
+   The source tag chooses where to read it. The order lists only record how
+   settings should appear. This module selects stored values, not expanded
+   prompt text. PRODUCT.md 3.1.10 and 3.3.9. *)
+
 module Domain = Slopgrid.Domain
 module List = FStar.List.Tot.Base
 module Native = Slopgrid.Native
@@ -84,6 +89,9 @@ let parameter_name (p: parameter) : Tot string =
   | PJudgeSystem -> "Judge system prompt"
   | PVariable -> "Prompt variables"
 
+(* These are the normal common values used when a destructive conversion
+   cannot retain a case value. Deciding whether to ask for confirmation belongs
+   to the edit flow, not this default table. PRODUCT.md 3.1.10. *)
 let parameter_default (p: parameter) : Tot (value_for p) =
   match p with
   | PInput -> InputValue [{ message_role = UserRole; content = ""; images = None }]
@@ -113,6 +121,9 @@ let get_source (sources: parameter_sources) (p: common_parameter) : Tot (option 
   | PJudgeCriteria -> sources.judge_criteria_source
   | PJudgeSystem -> sources.judge_system_source
 
+(* Keep an existing setting in its current display position. A newly added
+   setting goes last, but the typed source field below remains the authority
+   for its shared value or owning axis. *)
 let set_source (sources: parameter_sources) (p: common_parameter) (value: source p)
   : Tot parameter_sources =
   let sources = {
@@ -220,6 +231,8 @@ let get_case_value (values: case_values) (p: parameter) : Tot (option (value_for
     | None -> None
     | Some value -> Some (VariableValue value))
 
+(* Editing one setting keeps the other values in this row or column case.
+   value_order tracks header order. It does not contain the setting's payload. *)
 let set_case_value (values: case_values) (value: value) : Tot case_values =
   let p = value_parameter value in
   let values = {
@@ -262,6 +275,9 @@ let remove_case_value (values: case_values) (p: parameter) : Tot case_values =
   | PJudgeSystem -> { values with judge_system_value = None }
   | PVariable -> { values with variable_value = None }
 
+(* Saved order metadata can omit a setting that still has a stored source.
+   Append such settings in the fixed enumeration order so ownership edits do
+   not overlook them. Do not infer absence from an order list. *)
 let source_parameters (sources: parameter_sources) : Tot (list common_parameter) =
   let missing =
     List.filter
@@ -273,6 +289,8 @@ let source_parameters (sources: parameter_sources) : Tot (list common_parameter)
   else
     List.append sources.source_order missing
 
+(* Apply the same fallback to each case's stored values. Keep recorded header
+   order first, then include any present fields missing from that metadata. *)
 let case_parameters (values: case_values) : Tot (list parameter) =
   let missing =
     List.filter
@@ -298,6 +316,9 @@ let axis_has_variables (input: layout) (side: axis) : Tot bool =
       | Some fields -> List.length fields > 0)
     (entries input side)
 
+(* Ownership comes from source tags, not from whichever fields happen to be
+   populated in a case. Variable fields are different: they belong directly
+   to an axis and have no shared-value control. PRODUCT.md 3.1.10. *)
 let axis_parameters (input: layout) (side: axis) : Tot (list parameter) =
   let owned : list parameter =
     List.map (fun (p: common_parameter) -> (p <: parameter))
@@ -313,6 +334,10 @@ let axis_parameters (input: layout) (side: axis) : Tot (list parameter) =
   else
     owned
 
+(* Ordinary dimensions compare at most one setting. Complete inputs and
+   judge rubrics need case editors, while an ordinary dimension with no
+   setting must have one neutral position. This checks stored layout shape,
+   not browser controls or resolved-cell validity. PRODUCT.md 3.1.10. *)
 let parameter_layout_issues (input: layout) : Tot (list validation_issue) =
   List.collect
     (fun side ->
@@ -351,6 +376,11 @@ let parameter_layout_issues (input: layout) : Tot (list validation_issue) =
                 []))))
     [Rows; Columns]
 
+(* Choose the stored setting before any template expansion. A row-owned
+   prompt can still reference column variables, so this lookup's independence
+   from the column does not make the final prompt column-independent.
+   Variable fields need an explicit axis because both axes can own them.
+   PRODUCT.md 3.3.9. *)
 let parameter_value (input: layout) (p: parameter) (row: nat) (column: nat) (side: option axis)
   : Tot (option (value_for p)) =
   if p = PVariable then
@@ -369,6 +399,9 @@ let parameter_value (input: layout) (p: parameter) (row: nat) (column: nat) (sid
       | None -> None
       | Some entry -> get_case_value entry.values p)
 
+(* Send field feedback back to the control that supplied this cell's value:
+   the shared editor or the owning row or column case. An absent source uses
+   the shared field path as a fallback. PRODUCT.md 3.4.2. *)
 let parameter_value_path (input: layout) (p: parameter) (row: nat) (column: nat)
   (side: option axis)
   : Tot (list path_segment) =
@@ -388,8 +421,9 @@ let parameter_value_path (input: layout) (p: parameter) (row: nat) (column: nat)
     | Some (Common _) -> List.append fallback [Property "value"]
     | Some (OnAxis owner) -> axis_path owner
 
-(* Setting one parameter's owner or common value makes that source readable
-   and leaves every other parameter's source unchanged. *)
+(* Ownership conversion changes this setting's source without changing the
+   source of another setting. This is the field-update fact used by the
+   conversion proofs. It says nothing about template expansion. *)
 let get_set_source (sources: parameter_sources) (p: common_parameter)
   (value: source p) (q: common_parameter)
   : Lemma
@@ -408,8 +442,9 @@ let get_set_source (sources: parameter_sources) (p: common_parameter)
   | PJudgeCriteria, _
   | PJudgeSystem, _ -> ()
 
-(* Setting a typed case value updates only its own parameter; looking up any
-   other parameter returns the previous value. *)
+(* Copying a setting into a row or column case makes that setting readable
+   there and leaves the case's other stored values alone. Conversion proofs
+   use this to separate the moved setting from the rest of the case. *)
 let get_set_case_value (values: case_values) (value: value) (q: parameter)
   : Lemma
       (get_case_value (set_case_value values value) q ==
@@ -428,8 +463,9 @@ let get_set_case_value (values: case_values) (value: value) (q: parameter)
   | JudgeSystemValue _, _
   | VariableValue _, _ -> ()
 
-(* Removing a case parameter makes its lookup absent and preserves every
-   other parameter's lookup. *)
+(* Returning one setting to common removes its case field, not the other
+   settings in that case. The collapse proofs use this lookup fact after
+   stripping the moved field from every case. *)
 let get_remove_case_value (values: case_values) (p: parameter) (q: parameter)
   : Lemma
       (get_case_value (remove_case_value values p) q ==
@@ -448,8 +484,9 @@ let get_remove_case_value (values: case_values) (p: parameter) (q: parameter)
   | PJudgeSystem, _
   | PVariable, _ -> ()
 
-(* A value belongs to an appended list exactly when it belongs to either
-   constituent list. *)
+(* The fallback enumeration joins recorded names with names recovered from
+   stored fields. Membership in that joined list means membership in either
+   part. This list fact supports the completeness proofs below. *)
 let rec mem_append (#a: eqtype) (value: a) (left: list a) (right: list a)
   : Lemma
       (List.mem value (List.append left right) ==
@@ -458,8 +495,9 @@ let rec mem_append (#a: eqtype) (value: a) (left: list a) (right: list a)
   | [] -> ()
   | _ :: rest -> mem_append value rest right
 
-(* Filtering retains a value exactly when it was present in the original list
-   and satisfies the filtering predicate. *)
+(* Recovering omitted setting names filters the fixed name list by stored
+   presence. This list fact lets the completeness proofs show that a matching
+   name survives that filter. *)
 let rec mem_filter (#a: eqtype) (value: a) (predicate: a -> Tot bool) (values: list a)
   : Lemma
       (List.mem value (List.filter predicate values) ==
@@ -469,7 +507,8 @@ let rec mem_filter (#a: eqtype) (value: a) (predicate: a -> Tot bool) (values: l
   | _ :: rest -> mem_filter value predicate rest
 
 #push-options "--fuel 16 --ifuel 1"
-(* The canonical common-parameter enumeration contains every common parameter. *)
+(* The fallback scan can find every setting that supports a shared value.
+   Variable fields are deliberately absent because they have no common source. *)
 let common_parameter_is_enumerated (p: common_parameter)
   : Lemma (List.mem p common_parameters) =
   match p with
@@ -485,8 +524,8 @@ let common_parameter_is_enumerated (p: common_parameter)
   | PJudgeCriteria
   | PJudgeSystem -> ()
 
-(* The complete parameter enumeration includes every parameter, including
-   variable fields as well as common-capable parameters. *)
+(* The case-field scan also covers variable fields. Every stored case value
+   therefore has a name available for fallback header enumeration. *)
 let parameter_is_enumerated (p: parameter)
   : Lemma (List.mem p parameter_names) =
   match p with
@@ -504,8 +543,9 @@ let parameter_is_enumerated (p: parameter)
   | PVariable -> ()
 #pop-options
 
-(* Every physically present parameter source is enumerated, even if its name
-   was omitted from the stored source-order metadata. *)
+(* A stored source cannot disappear from the list of settings merely because
+   saved display-order metadata omits it. This is why conversion code may
+   enumerate sources without losing an owned setting. *)
 let source_parameters_complete (sources: parameter_sources) (p: common_parameter)
   : Lemma
     (requires (get_source sources p <> None))
@@ -519,8 +559,9 @@ let source_parameters_complete (sources: parameter_sources) (p: common_parameter
       (fun q -> not (List.mem q sources.source_order) && get_source sources q <> None)
       common_parameters)
 
-(* Every physically present case value is enumerated, even if its parameter
-   was omitted from the stored value-order metadata. *)
+(* A stored case field remains in the case's setting list even when saved
+   header order omits it. The value fields, not their ordering metadata, decide
+   which settings must be considered. *)
 let case_parameters_complete (values: case_values) (p: parameter)
   : Lemma
     (requires (get_case_value values p <> None))
@@ -534,8 +575,9 @@ let case_parameters_complete (values: case_values) (p: parameter)
       (fun q -> not (List.mem q values.value_order) && get_case_value values q <> None)
       parameter_names)
 
-(* Widening common parameters to the full parameter type preserves membership
-   in a list. *)
+(* Case headers can list settings or variable fields. The ownership scan lists
+   only settings with shared controls, so it uses a narrower type. Widening
+   those names to the header type must not drop one from the list. *)
 let rec common_map_mem (values: list common_parameter) (p: common_parameter)
   : Lemma
       (List.mem p values ==
@@ -544,8 +586,9 @@ let rec common_map_mem (values: list common_parameter) (p: common_parameter)
   | [] -> ()
   | _ :: rest -> common_map_mem rest p
 
-(* Any common-capable parameter owned by an axis appears in that axis's
-   parameter enumeration. *)
+(* If a source tag assigns a setting to rows or columns, that axis's setting
+   list includes it even when saved order metadata omitted its name.
+   This supports the owned-header rule in PRODUCT.md 3.1.10. *)
 let axis_owner_is_enumerated (input: layout) (p: common_parameter) (side: axis)
   : Lemma
     (requires (get_source input.parameters p == Some (OnAxis side)))
@@ -569,8 +612,9 @@ let axis_owner_is_enumerated (input: layout) (p: common_parameter) (side: axis)
   mem_append (p <: parameter)
     (List.map (fun (q: common_parameter) -> (q <: parameter)) owned_sources) [PVariable]
 
-(* An axis with variable fields includes the variable parameter in its
-   parameter enumeration. *)
+(* Any axis with at least one variable slot lists the variable parameter.
+   The slot need not have text or images. This fact is about the presence of
+   fields, not whether a template consumes them. *)
 let axis_variable_is_enumerated (input: layout) (side: axis)
   : Lemma
     (requires (axis_has_variables input side))
@@ -586,7 +630,9 @@ let axis_variable_is_enumerated (input: layout) (side: axis)
   in
   mem_append PVariable owned [PVariable]
 
-(* A list containing a member has strictly positive length. *)
+(* Finding an owned setting in the enumeration rules out an empty list.
+   The next proof needs this length fact to prevent an owned axis from being
+   reduced to a neutral position. *)
 let member_has_positive_length (#a: eqtype) (value: a) (values: list a)
   : Lemma
     (requires (List.mem value values))
@@ -595,8 +641,9 @@ let member_has_positive_length (#a: eqtype) (value: a) (values: list a)
   | [] -> ()
   | _ :: _ -> ()
 
-(* An axis that owns a parameter has a nonempty parameter enumeration, so
-   the enumeration cannot classify it as an ownerless neutral dimension. *)
+(* A row or column axis that still owns a setting is not ownerless.
+   Removing another setting must not collapse that dimension to one neutral
+   position. This is the ownership check used for PRODUCT.md 3.1.10. *)
 let axis_owner_prevents_neutralization (input: layout) (p: common_parameter) (side: axis)
   : Lemma
     (requires (get_source input.parameters p == Some (OnAxis side)))

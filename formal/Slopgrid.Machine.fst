@@ -9,7 +9,17 @@ module Parameters = Slopgrid.Parameters
 module Policy = Slopgrid.Policy
 open Slopgrid.Domain
 
+(* This is the creation form's event handler. It changes the draft and returns
+   commands for the controller. The controller handles browser storage,
+   confirmation dialogs, uploads, and HTTP. PRODUCT.md 3.1.8 and 3.7.4 describe
+   the user-visible save and retry behavior. This module decides when to ask
+   for that work. *)
+
 let request_phase = phase: Domain.submission_phase { phase <> Domain.Idle }
+
+(* Generate captures the checked setup here. Later form edits cannot change
+   that request. Upload replies may replace its local image IDs with saved
+   image IDs while keeping the accepted input. PRODUCT.md 3.7.4. *)
 
 noeq type submission = {
   request_id: pos;
@@ -19,6 +29,10 @@ noeq type submission = {
   reuse_artifacts: bool;
   continue_low_balance: bool
 }
+
+(* A destructive edit waits here as a separate draft. The form keeps showing
+   the old values until the user accepts the matching dialog.
+   PRODUCT.md 3.1.10 and 3.1.12. *)
 
 type confirmation = {
   confirmation_id: pos;
@@ -71,6 +85,10 @@ let has_submission (model: state) : Tot bool =
   | None -> false
   | Some _ -> true
 
+(* An upload reply and a create-grid reply belong to different stages. Match
+   both the request ID and the stage so a late reply cannot advance newer work.
+   This is callback ownership inside the form, not server job scheduling. *)
+
 let owns (model: state) (id: pos) (expected: request_phase) : Tot bool =
   match model.active with
   | Some request -> request.request_id = id && request.request_phase = expected
@@ -91,6 +109,10 @@ let unchanged (model: state) : Tot step =
 let metadata (model: state) (commands: list Domain.command) : Tot step =
   transition model Domain.MetadataChanged commands
 
+(* Parameter-order lists control display and serialization order. Changing
+   only those lists is not a new prompt or setting and should not save a new
+   draft. Case order and the actual parameter values still count. *)
+
 let draft_for_comparison (draft: Domain.draft) : Tot Domain.draft =
   {
     draft with
@@ -102,6 +124,11 @@ let draft_for_comparison (draft: Domain.draft) : Tot Domain.draft =
 
 let draft_equal (left: Domain.draft) (right: Domain.draft) : Tot bool =
   draft_for_comparison left = draft_for_comparison right
+
+(* An edit dismisses an older loss dialog and resets attempt feedback. Save
+   only if the draft data changed. Even a no-op edit can therefore change the
+   dialog or error state without rewriting saved inputs.
+   PRODUCT.md 3.1.10 and 3.1.12. *)
 
 let edit (model: state) (draft: Domain.draft) (next_case: nat) : Tot step =
   let different = not (draft_equal draft model.draft) in
@@ -151,6 +178,11 @@ let attachment_images (images: option (list Domain.reference_image))
   match images with
   | None -> []
   | Some images -> images
+
+(* Find images that need their local IDs replaced before submission. Include
+   complete prompts and numbered fields. This list does not decide which
+   fields a particular generated message consumes. The policy code does that.
+   PRODUCT.md 3.7.3 and 3.7.4. *)
 
 let reference_images (layout: Domain.layout) : Tot (list Domain.reference_image) =
   let messages =
@@ -295,6 +327,11 @@ let replace_references (layout: Domain.layout) (local_id: string)
       with_input.columns
   }
 
+(* Generate has three outcomes. A blocker leaves the form alone. Missing
+   selections reveal local errors. A ready form starts image preparation with
+   one captured request. Another click cannot create a second active request.
+   PRODUCT.md 3.2.3, 3.3.6, and 3.7.4. *)
+
 let generate (model: state) (continue_low_balance: bool) : Tot step =
   if has_submission model
   then unchanged model
@@ -328,6 +365,10 @@ let generate (model: state) (continue_low_balance: bool) : Tot step =
         }
         [Domain.PrepareReferences request.request_id input]
 
+(* Do not send local image IDs to grid creation. Wait until every local
+   reference in the captured request has a saved replacement, then submit
+   that same request. PRODUCT.md 3.7.4. *)
+
 let references_prepared (model: state) (id: pos) : Tot step =
   if not (owns model id Domain.Preparing)
   then unchanged model
@@ -342,6 +383,11 @@ let references_prepared (model: state) (id: pos) : Tot step =
           { model with active = Some { request with request_phase = Domain.Submitting } }
           [Domain.SubmitGrid request.request_id request.request_input request.source_grid_id
             request.reuse_artifacts request.continue_low_balance]
+
+(* A created grid still needs the controller's completion work. Keep the
+   request in Completed until that work succeeds or reports an error. A late
+   failure from the create call must not erase this acknowledged success.
+   PRODUCT.md 3.1.8. *)
 
 let submission_succeeded (model: state) (id: pos) (grid_id: string) : Tot step =
   if not (owns model id Domain.Submitting)
@@ -375,6 +421,11 @@ let completion_failed (model: state) (id: pos) (message: string) : Tot step =
   then unchanged model
   else metadata { model with active = None; error = message } []
 
+(* Apply only the proposal whose dialog is still pending. Cancel keeps the
+   form's values. Acceptance uses the stored proposal rather than recalculating
+   a destructive edit against whatever the user has typed since.
+   PRODUCT.md 3.1.10 and 3.1.12. *)
+
 let confirmation_resolved (model: state) (id: pos) (accepted: bool) : Tot step =
   if not (owns_confirmation model id)
   then unchanged model
@@ -385,6 +436,11 @@ let confirmation_resolved (model: state) (id: pos) (accepted: bool) : Tot step =
       if accepted
       then edit model proposal.proposed_draft model.next_case
       else metadata { model with pending_confirmation = None } []
+
+(* Replace this image in the captured request. Also replace it in the draft
+   only if that draft still uses the local ID. Removing an image while its
+   upload finishes must not make the reply insert it again. Remove the local
+   file after recording the saved replacement. PRODUCT.md 3.7.4. *)
 
 let reference_uploaded (model: state) (id: pos) (local_id: string)
   (image: Domain.reference_image) : Tot step =
@@ -422,6 +478,10 @@ let reference_uploaded (model: state) (id: pos) (local_id: string)
           (if result.change = Domain.DraftChanged then Domain.DraftChanged else Domain.MetadataChanged)
           (List.append result.commands [Domain.RemoveReferenceFile local_id])
 
+(* A loss warning emits only a dialog command. It does not save the proposed
+   values or submit them. Reserving case IDs now avoids reusing those IDs
+   while the proposal waits. PRODUCT.md 3.1.10 and 3.1.12. *)
+
 let propose_draft (model: state) (draft: Domain.draft) (next_case: nat)
   (message: option string) : Tot step =
   match message with
@@ -447,6 +507,11 @@ let edit_input (model: state) (action: Domain.input_action) : Tot step =
   if draft_equal model.draft comparable
   then edit model model.draft model.next_case
   else propose_draft model comparable counter (Input.confirmation before action)
+
+(* Format conversion first computes the replacement setup and any lost
+   settings. One confirmation covers the whole change, including case-owned
+   prompts and rubrics. Nothing in the draft changes until acceptance.
+   PRODUCT.md 3.1.12, 3.3.9, and 3.8.4. *)
 
 let select_format (model: state) (format: Domain.format) : Tot step =
   let draft, counter, dropped = Input.select_format model.draft format model.context.catalog

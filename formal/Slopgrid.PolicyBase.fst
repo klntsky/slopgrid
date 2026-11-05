@@ -1,5 +1,9 @@
 module Slopgrid.PolicyBase
 
+(* Policy reads a cell's settings from their common, row, or column owner.
+   These helpers also keep the owning control separate from the cell where a
+   conflict appears. PRODUCT.md 3.3.9 and 3.4.2. *)
+
 module Domain = Slopgrid.Domain
 module List = FStar.List.Tot.Base
 open FStar.List.Tot.Base
@@ -102,6 +106,9 @@ let source_kind (g: Domain.layout) (p: Domain.common_parameter) : Tot string =
   | Some (Domain.Common _) -> "common"
   | Some (Domain.OnAxis side) -> axis_key side
 
+(* Choose the complete owned value first. A row-owned prompt can still mention
+   column fields, so this lookup alone does not determine its expanded text.
+   PRODUCT.md 3.3.9. *)
 let value (g: Domain.layout) (p: Domain.parameter) (row: nat) (column: nat)
   : Tot (option (Domain.value_for p)) =
   Parameters.parameter_value g p row column None
@@ -172,6 +179,9 @@ let role_key (r: Domain.role) : Tot string =
 
 let nonempty (s: string) : Tot bool = Native.trim s <> ""
 
+(* Keep issues distinct by their full record here, including their field path.
+   Equal messages on different controls must remain separate. Grouping messages
+   by text within a control belongs to the feedback consumer. PRODUCT.md 3.4.2. *)
 let distinct_issues = unique #Domain.validation_issue
 
 let rec scan_all (text: string) (chars: string) (fuel: nat) (offset: nat)
@@ -224,6 +234,9 @@ let valid_image (kind: Domain.parameter) (v: string) : Tot bool =
        "9:19.5"; "19.5:9"; "9:20"; "20:9"; "9:21"; "21:9"]
   else false
 
+(* Auto leaves the setting to the provider. Treat an empty image list as no
+   explicit attachment selection. Endpoint checks still examine the consumed
+   count, including zero. PRODUCT.md 3.7.9 and 3.4.6. *)
 let normalize_setting (v: option string) : Tot (option string) =
   match v with
   | Some s -> if s = "" || s = "auto" then None else v
@@ -241,6 +254,9 @@ let normalize_settings (s: Domain.image_settings) : Tot Domain.image_settings =
        | refs -> refs)
   }
 
+(* A conflict keeps its cell coordinates elsewhere. This records the setting's
+   actual owner, so a shared model and a case-owned input can both receive
+   feedback for the same cell. PRODUCT.md 3.4.2. *)
 let origin (g: Domain.layout) (cell: Domain.preview_cell) (p: Domain.common_parameter)
   : Tot Domain.origin =
   let side = source_axis g p in

@@ -1,5 +1,10 @@
 module Slopgrid.TemplateProofs
 
+(* Connect Input's string scanner to Template's byte-list parser. Native's
+   byte indexing, slicing, and Unicode contracts are trusted here, not proved.
+   These lemmas let transpose proofs use the actual reference rewrite without
+   treating literal field contents as templates. PRODUCT.md 3.3.4 and 3.3.7. *)
+
 module Native = Slopgrid.Native
 module Input = Slopgrid.Input
 module Template = Slopgrid.Template
@@ -25,8 +30,8 @@ let rec bounded_name_count (fuel: nat) (bytes: list byte) : Tot nat =
       else
         0
 
-(* Indexing a byte list agrees with taking the head after dropping that many
-   bytes, using -1 for an absent element in either representation. *)
+(* Relate the scanner's byte lookup to the remaining parser input.
+   Both use -1 after the input ends, so an exhausted scan cannot find a name. *)
 let rec nth_drop (bytes: list byte) (index: nat)
   : Lemma
     ((match List.nth bytes index with
@@ -37,8 +42,8 @@ let rec nth_drop (bytes: list byte) (index: nat)
   | _ :: rest ->
     if index = 0 then () else nth_drop rest (index - 1)
 
-(* Dropping one more byte removes the head of the already-dropped list, or leaves
-   an exhausted list empty. *)
+(* Moving the scanner one byte forward removes the parser input's head.
+   At the end, both descriptions stay exhausted. *)
 let rec drop_successor (bytes: list byte) (index: nat)
   : Lemma
     (Native.drop_bytes (index + 1) bytes ==
@@ -50,8 +55,8 @@ let rec drop_successor (bytes: list byte) (index: nat)
   | _ :: rest ->
     if index = 0 then () else drop_successor rest (index - 1)
 
-(* The runtime token-length scan counts exactly the leading name bytes in the
-   suffix at the given byte position, bounded by the same fuel. *)
+(* The string scanner reads the same uppercase name bytes as the parser.
+   Both stop at the first byte outside the allowed name alphabet. *)
 let rec token_length_model (fuel: nat) (text: string) (position: nat)
   : Lemma
     (Input.token_length fuel text position ==
@@ -70,8 +75,8 @@ let rec token_length_model (fuel: nat) (text: string) (position: nat)
         (drop_successor (Native.byte_view text) position;
          token_length_model (fuel - 1) text (position + 1))
 
-(* With fuel at least the byte-list length, bounded name counting returns the
-   full length of the name prefix selected by the template model. *)
+(* Input length supplies enough fuel to read the entire name prefix.
+   Fuel must not cut ROW10 down to a shorter apparent name. *)
 let rec count_span (fuel: nat) (bytes: list byte{fuel >= List.length bytes})
   : Lemma (bounded_name_count fuel bytes == List.length (fst (Template.span_name bytes))) =
   match bytes with
@@ -79,7 +84,7 @@ let rec count_span (fuel: nat) (bytes: list byte{fuel >= List.length bytes})
   | first :: rest ->
     if not (Template.name_byte first) then () else count_span (fuel - 1) rest
 
-(* Dropping any number of bytes cannot increase a byte list's length. *)
+(* A remaining scanner suffix fits within the original input-length fuel. *)
 let rec drop_length (bytes: list byte) (index: nat)
   : Lemma (List.length (Native.drop_bytes index bytes) <= List.length bytes) =
   match bytes with
@@ -87,21 +92,21 @@ let rec drop_length (bytes: list byte) (index: nat)
   | _ :: rest ->
     if index = 0 then () else drop_length rest (index - 1)
 
-(* Taking as many bytes as a concatenated prefix contains recovers that prefix. *)
+(* Slicing out the scanned name recovers its exact bytes, without its tail. *)
 let rec take_append (prefix: list byte) (suffix: list byte)
   : Lemma (Native.take_bytes (List.length prefix) (List.append prefix suffix) == prefix) =
   match prefix with
   | [] -> ()
   | _ :: rest -> take_append rest suffix
 
-(* Dropping as many bytes as a concatenated prefix contains recovers its suffix. *)
+(* Advancing past the scanned name leaves exactly the parser's old tail. *)
 let rec drop_append (prefix: list byte) (suffix: list byte)
   : Lemma (Native.drop_bytes (List.length prefix) (List.append prefix suffix) == suffix) =
   match prefix with
   | [] -> ()
   | _ :: rest -> drop_append rest suffix
 
-(* Dropping two byte counts in sequence equals dropping their sum at once. *)
+(* Combine the dollar step and name step into the scanner's next byte offset. *)
 let rec drop_add (bytes: list byte) (first: nat) (second: nat)
   : Lemma
     (Native.drop_bytes (first + second) bytes ==
@@ -111,9 +116,10 @@ let rec drop_add (bytes: list byte) (first: nat) (second: nat)
   | _ :: rest ->
     if first = 0 then () else drop_add rest (first - 1) second
 
-(* A runtime token match at a byte position agrees with the model after a dollar:
-   its name bytes, consumed count (including the dollar), and remaining suffix coincide.
-   If no token is found at a dollar, the model also rejects that reference. *)
+(* The runtime scanner recognizes exactly the parser's whole token at a dollar,
+   with the same name and next byte offset. Lowercase or Unicode alphanumeric
+   continuations reject a partial match under Native's trusted classifier.
+   PRODUCT.md 3.3.4. *)
 let token_at_model (text: string) (position: nat)
   : Lemma
     (ensures (match Input.token_at text position with
@@ -150,6 +156,8 @@ let token_at_model (text: string) (position: nat)
       | [] -> ()
       | next :: _ -> ())
 
+(* Model a rename as a scan of the old bytes. Replacement bytes go straight
+   into the result. The recursive call resumes at the old token's tail. *)
 let rec rewrite_bytes (fuel: nat) (rename: Template.identifier -> GTot (list byte))
   (bytes: list byte)
   : GTot (list byte) (decreases fuel) =
@@ -172,15 +180,15 @@ let valid_renamer (rename: string -> Tot string) : prop =
     let renamed = Native.byte_view (rename (Native.bytes_string name)) in
     renamed <> [] /\ Template.name_bytes renamed
 
-(* Converting a runtime-renamed identifier to bytes yields a nonempty name-byte
-   list whenever the runtime renamer satisfies valid_renamer. *)
+(* Adapt a string renamer to the byte parser. The valid_renamer assumption is
+   essential: a replacement must remain one nonempty identifier. *)
 let runtime_rename (rename: string -> Tot string) (name: Template.identifier)
   : GTot (result: list byte{
       valid_renamer rename ==> (result <> [] /\ Template.name_bytes result)}) =
   Native.byte_view (rename (Native.bytes_string name))
 
-(* At any byte position and with the same fuel, the runtime rewrite scanner's
-   output bytes equal the bounded byte-list rewrite of the remaining suffix. *)
+(* Each runtime scan step copies a literal byte or rewrites one whole token,
+   just like the byte model. Both continue through the original input only. *)
 let rec rewrite_scan_model (fuel: nat) (rename: string -> Tot string) (text: string)
   (position: nat)
   : Lemma
@@ -191,7 +199,7 @@ let rec rewrite_scan_model (fuel: nat) (rename: string -> Tot string) (text: str
   Native.empty_byte_view ();
   Native.ascii_byte_view "$";
   if fuel = 0 || position >= Native.length text then (
-    (* Dropping at least a byte list's length leaves the empty list. *)
+    (* Once the byte offset reaches the end, the parser has no input left. *)
     let rec exhausted (bytes: list byte) (index: nat)
       : Lemma
         (requires index >= List.length bytes)
@@ -224,8 +232,8 @@ let rec rewrite_scan_model (fuel: nat) (rename: string -> Tot string) (text: str
            Native.byte_view_injective name (Native.bytes_string reference);
            rewrite_scan_model (fuel - 1) rename text (position + count)))
 
-(* Rewriting a whole runtime string produces exactly the bounded byte-list
-   rewrite, using the original byte length as fuel. *)
+(* A whole-string rewrite uses its original byte length as fuel and matches
+   the byte scanner from offset zero. *)
 let rewrite_text_model (rename: string -> Tot string) (text: string)
   : Lemma
     (Native.byte_view (Input.rewrite_text rename text) ==
@@ -246,8 +254,8 @@ let rec rewrite_complete (rename: Template.identifier -> GTot (list byte)) (byte
     else
       first :: rewrite_complete rename rest
 
-(* Fuel at least the input byte length suffices for the bounded byte rewrite to
-   equal the complete rewrite, regardless of the replacement byte lengths. *)
+(* Original input length is enough fuel even if renamed names grow. Inserted
+   bytes are never scanned, so their length cannot exhaust the fuel. *)
 let rec complete_fuel (fuel: nat) (rename: Template.identifier -> GTot (list byte))
   (bytes: list byte{fuel >= List.length bytes})
   : Lemma (rewrite_bytes fuel rename bytes == rewrite_complete rename bytes)
@@ -262,8 +270,8 @@ let rec complete_fuel (fuel: nat) (rename: Template.identifier -> GTot (list byt
     else
       complete_fuel (fuel - 1) rename rest
 
-(* Complete rewriting copies a dollar-free prefix literally and rewrites only
-   the suffix that follows it. *)
+(* Copy literal text up to the next dollar without consulting the renamer.
+   Only the remaining suffix can contain a reference. *)
 let rec rewrite_literal_prefix (rename: Template.identifier -> GTot (list byte))
   (prefix: list byte{Template.no_dollar prefix}) (suffix: list byte)
   : Lemma
@@ -273,8 +281,8 @@ let rec rewrite_literal_prefix (rename: Template.identifier -> GTot (list byte))
   | [] -> ()
   | _ :: rest -> rewrite_literal_prefix rename rest suffix
 
-(* For a dollar-free part between dollar delimiters, complete rewriting renames
-   that part as the template model does and independently rewrites the next suffix. *)
+(* Rewriting one dollar-separated part agrees with renaming its parsed name.
+   The next dollar starts a separate scan step, even after a rejected token. *)
 let rewrite_join_parts (rename: Template.identifier -> GTot Template.identifier)
   (part: list byte{Template.no_dollar part}) (suffix: list byte)
   : Lemma
@@ -290,8 +298,8 @@ let rewrite_join_parts (rename: Template.identifier -> GTot Template.identifier)
     FStar.List.Tot.Properties.append_assoc (36 :: rename name) tail
       (rewrite_complete rename (36 :: suffix))
 
-(* For a final dollar-free part after a dollar, complete rewriting preserves the
-   dollar and gives exactly the model's renamed part. *)
+(* Handle the last dollar-separated part, where there is no later delimiter.
+   Keep its dollar and rename only the name recognized by the parser. *)
 let rewrite_last_part (rename: Template.identifier -> GTot Template.identifier)
   (part: list byte{Template.no_dollar part})
   : Lemma
@@ -305,8 +313,8 @@ let rewrite_last_part (rename: Template.identifier -> GTot Template.identifier)
     FStar.List.Tot.Properties.append_l_nil tail;
     rewrite_literal_prefix rename tail []
 
-(* Joining dollar-free reference parts behind a leading dollar and rewriting
-   equals renaming each part and then joining, with that leading dollar preserved. *)
+(* Repeat the per-part argument through all references. Rebuilding the string
+   preserves the original dollar boundaries rather than rescanning new names. *)
 let rec rewrite_references_parts (rename: Template.identifier -> GTot Template.identifier)
   (parts: list (list byte){List.for_all Template.no_dollar parts})
   : Lemma
@@ -319,8 +327,8 @@ let rec rewrite_references_parts (rename: Template.identifier -> GTot Template.i
     rewrite_join_parts rename part (Template.join_dollar rest);
     rewrite_references_parts rename rest
 
-(* Complete rewriting of joined nonempty, dollar-free template parts agrees
-   byte-for-byte with joining the renamed parts, leaving the initial literal intact. *)
+(* The complete byte scanner and the split-parts parser produce the same
+   renamed string. Both leave text before the first dollar untouched. *)
 let rewrite_template_parts (rename: Template.identifier -> GTot Template.identifier)
   (parts: list (list byte){parts <> [] /\ List.for_all Template.no_dollar parts})
   : Lemma
@@ -335,8 +343,9 @@ let rewrite_template_parts (rename: Template.identifier -> GTot Template.identif
     rewrite_literal_prefix rename literal (36 :: Template.join_dollar rest);
     rewrite_references_parts rename rest
 
-(* When the runtime renamer returns valid identifiers, parsing its rewritten
-   text yields exactly the model-renamed original dollar-separated parts. *)
+(* Reparse Input's rewritten text and obtain exactly the parser's renamed
+   parts. This requires valid replacement identifiers, not arbitrary strings.
+   The transpose proof uses this bridge before comparing expanded cells. *)
 let rewrite_text_parses (rename: string -> Tot string{valid_renamer rename}) (text: string)
   : Lemma
     (Template.split_dollar (Native.byte_view (Input.rewrite_text rename text)) ==
@@ -354,8 +363,10 @@ let effective_text (resolve: Template.identifier -> GTot (list byte)) (text: str
   : GTot (list byte) =
   Template.expand_template resolve (Template.split_dollar (Native.byte_view text))
 
-(* Runtime rewriting preserves the literal-expanded byte sequence when renames
-   are valid and the new resolver returns the old value for every renamed identifier. *)
+(* Rewriting references preserves expanded text if each new name resolves to
+   the old field text. Expansion inserts that text literally once, not as
+   another template. This is conditional, not validation of arbitrary renames.
+   PRODUCT.md 3.3.2 and 3.3.4. *)
 let rewrite_expansion (rename: string -> Tot string{valid_renamer rename})
   (before: Template.identifier -> GTot (list byte))
   (after: Template.identifier -> GTot (list byte)) (text: string)
@@ -371,8 +382,10 @@ let effective_references #a (resolve: Template.identifier -> GTot a) (text: stri
   : GTot (list a) =
   Template.resolve_template resolve (Template.split_dollar (Native.byte_view text))
 
-(* Runtime rewriting preserves the exact ordered list of resolved references
-   when renames are valid and old and renamed identifiers have equal resolver values. *)
+(* Rewriting keeps the same resolver results in mention order when new names
+   still find the old fields. This supports separate generator and judge
+   reference comparisons. It does not deduplicate their images.
+   PRODUCT.md 3.3.2 and 3.3.5. *)
 let rewrite_resolution #a (rename: string -> Tot string{valid_renamer rename})
   (before: Template.identifier -> GTot a) (after: Template.identifier -> GTot a) (text: string)
   : Lemma

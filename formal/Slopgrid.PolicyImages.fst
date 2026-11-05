@@ -1,5 +1,9 @@
 module Slopgrid.PolicyImages
 
+(* Image compatibility uses one cell's resolved settings and consumed images.
+   A provider must accept the whole combination, not just one setting each
+   across several providers. These results are advisory. PRODUCT.md 3.4.6 and 3.4.7. *)
+
 module Domain = Slopgrid.Domain
 module List = FStar.List.Tot.Base
 open FStar.List.Tot.Base
@@ -22,6 +26,9 @@ type setting =
 
 let all_settings = [Size; AspectRatio; Quality; Background; InputReferences]
 
+(* Try alternative endpoints only after checking each endpoint's whole
+   combination. A verified route wins. An uncertain route cannot turn a known
+   failure on every other route into verified support. PRODUCT.md 3.4.6. *)
 let provider_support (states: list support_state) : Tot support_state =
   if PolicyBase.member Supported states then Supported
   else if PolicyBase.member Unknown states then Unknown
@@ -72,6 +79,9 @@ let present (#a: Type) (v: option a) : Tot bool =
   | None -> false
   | Some _ -> true
 
+(* Missing scalar choices mean Auto, so they impose no explicit setting.
+   Input images instead use the consumed count, including a provider's declared
+   lower bound. Pixel sizes need size support rather than a resolution label. *)
 let parameter_support (parameters: list (string & Domain.capability)) (kind: setting)
   (settings: Domain.image_settings) : Tot support_state =
   let setting = setting_value settings kind in
@@ -174,6 +184,9 @@ let image_conflicts (endpoints: list Domain.image_endpoint) (settings: Domain.im
             (PolicyBase.cat (parameter_name kind) " support is unknown.") true)
         active
     else
+      (* Enumerate setting subsets to find which choices conflict together.
+         Once a smaller subset fails, omit larger failures that only repeat it.
+         Keep uncertain subsets separate from known failures. PRODUCT.md 3.4.6. *)
       let rec process (remaining: list nat) (incompatible: list (list setting))
         (uncertain: list (list setting)) : Tot (list conflict) (decreases remaining) =
         match remaining with
@@ -217,6 +230,9 @@ let image_conflicts (endpoints: list Domain.image_endpoint) (settings: Domain.im
       in
       process (masks 31 1) [] []
   in
+  (* A size/aspect mismatch depends only on these two values, not the model or
+     any unfinished prompt. Keep it separate from endpoint metadata so the
+     feedback remains available during editing. PRODUCT.md 3.4.6. *)
   let ratio_conflicts =
     match settings.image_size, settings.image_aspect_ratio with
     | Some size, Some ratio ->

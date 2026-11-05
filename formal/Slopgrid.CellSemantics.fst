@@ -3,6 +3,11 @@ module Slopgrid.CellSemantics
 module Domain = Slopgrid.Domain
 open Slopgrid.Domain
 
+(* Describe which stored setting a cell should read before variable expansion.
+   Keep this description separate from the getters used by the form. Otherwise
+   the same lookup bug could appear on both sides of an ownership proof.
+   PRODUCT.md 3.1.10 and 3.3.9. *)
+
 let source_for (sources: parameter_sources) (p: common_parameter)
   : Tot (option (source p)) =
   match p with
@@ -80,11 +85,20 @@ let axis_entries (layout: layout) (side: axis) : Tot (list case_record) =
   | Rows -> layout.rows
   | Columns -> layout.columns
 
+(* Pick one row or column case, then read its setting. A missing case or value
+   stays missing. Do not borrow a value from another case or from the old
+   shared control. PRODUCT.md 3.3.9 and 3.8.9. *)
+
 let axis_value (layout: layout) (side: axis) (index: nat) (p: parameter)
   : Tot (option (value_for p)) =
   match entry_at (axis_entries layout side) index with
   | None -> None
   | Some entry -> case_value entry.values p
+
+(* A shared prompt is the same stored value for every cell. A row-owned prompt
+   comes from that row, and a column-owned prompt comes from that column.
+   Expansion happens later, so any of those prompts may still refer to
+   variable fields on both axes. PRODUCT.md 3.3.9. *)
 
 let resolve (layout: layout) (row: nat) (column: nat) (p: common_parameter)
   : Tot (option (value_for p)) =
@@ -93,6 +107,10 @@ let resolve (layout: layout) (row: nat) (column: nat) (p: common_parameter)
   | Some (Common value) -> Some value
   | Some (OnAxis Rows) -> axis_value layout Rows row p
   | Some (OnAxis Columns) -> axis_value layout Columns column p
+
+(* No image list and an empty image list both mean no attachments. Use that
+   meaning when deciding whether case inputs agree before returning them to
+   the shared prompt. PRODUCT.md 3.3.9. *)
 
 let normalize_images (images: option (list reference_image)) : Tot (list reference_image) =
   match images with
@@ -122,6 +140,11 @@ let canonical_value (value: value) : Tot (value_for (value_parameter value)) =
   | InputValue messages -> InputValue (normalize_messages messages)
   | VariableValue fields -> VariableValue (normalize_fields fields)
   | other -> other
+
+(* Compare complete input values after removing empty image-list differences.
+   This does not ignore different text, message roles, or real attachments.
+   A loss-free return to a shared value needs this agreement in every case.
+   PRODUCT.md 3.1.10 and 3.3.9. *)
 
 let equivalent (p: parameter) (left: option (value_for p)) (right: option (value_for p))
   : Tot bool =

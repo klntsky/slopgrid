@@ -7,7 +7,16 @@ module Native = Slopgrid.Native
 module List = FStar.List.Tot.Base
 open Slopgrid.Domain
 
+(* Describe the input a cell would send to generation and judging. Keep the
+   expanded text, message roles, and attachment order so a swap cannot pass
+   merely because it preserved the number of cells. This is a description
+   for proofs, not code that calls a provider. PRODUCT.md 3.3.4-7 and 3.8.9. *)
+
 type environment = Template.identifier -> GTot (option variable_field)
+
+(* Remember missing fields as None even when their expansion contributes no
+   bytes. A deleted ROW2 must not become indistinguishable from a live ROW2
+   whose text is empty. PRODUCT.md 3.3.4 and 3.3.6. *)
 
 type text_meaning = {
   expanded_bytes: list Native.byte;
@@ -61,6 +70,10 @@ let rec reference_images (fields: list (option variable_field)) : Tot (list refe
        | Some field -> CellSemantics.normalize_images field.field_images)
       (reference_images rest)
 
+(* A field used twice can contribute text twice, but its images belong in the
+   consuming message only once. Keep the first occurrence's image order.
+   PRODUCT.md 3.3.4 and 3.7.3. *)
+
 let rec deduplicate_images (images: list reference_image) (seen: list string)
   : Tot (list reference_image) =
   match images with
@@ -79,6 +92,11 @@ let text_resolved (meaning: text_meaning) : Tot bool =
 let resolved_text (meaning: text_meaning) : Tot (option (list Native.byte)) =
   if text_resolved meaning then Some meaning.expanded_bytes else None
 
+(* Keep the message's own attachments before images supplied by its referenced
+   fields. Only a user message can consume those field images. A system or
+   assistant message with such a reference fails the template check below.
+   PRODUCT.md 1.1.3 and 3.7.3. *)
+
 let message (env: environment) (message: message) : GTot message_meaning =
   let meaning = text env message.content in
   {
@@ -92,6 +110,11 @@ let message (env: environment) (message: message) : GTot message_meaning =
          else []))
       []
   }
+
+(* Judge questions may refer to different fields than the generator prompt.
+   Keep their text and images separate from generator messages. This record
+   also keeps the expected answer for comparison with the verdict. It does
+   not tell the judge which answer to give. PRODUCT.md 3.3.5, 3.8.9, and 5.6.4. *)
 
 let criterion (env: environment) (criterion: criterion) : GTot criterion_meaning =
   let meaning = text env criterion.criterion_text in
@@ -128,6 +151,11 @@ let cell (input: layout) (row: nat) (column: nat) : GTot cell_meaning = {
   cell_parameters = Template.map_g (fun p -> (p, parameter input row column p)) all_parameters
 }
 
+(* These checks cover missing variable references and images in non-user
+   message templates. They do not establish full submission eligibility,
+   such as a selected model or a complete Chat history. Policy checks those
+   requirements separately. PRODUCT.md 3.3.6 and 3.4.1. *)
+
 let message_templates_valid (meaning: message_meaning) : Tot bool =
   text_resolved meaning.effective_content &&
   (meaning.effective_role = UserRole ||
@@ -152,6 +180,11 @@ let templates_valid (meaning: cell_meaning) : Tot bool =
         | None -> true
         | Some value -> parameter_templates_valid value)
     meaning.cell_parameters
+
+(* Compare only cell meanings whose variable references can be resolved and
+   whose field images can reach the chosen message roles. Some here does not
+   mean that Generate is allowed. Other form errors may still block it.
+   PRODUCT.md 3.3.6 and 3.4.7. *)
 
 let observable_cell (input: layout) (row: nat) (column: nat) : GTot (option cell_meaning) =
   let meaning = cell input row column in

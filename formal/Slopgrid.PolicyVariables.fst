@@ -1,5 +1,9 @@
 module Slopgrid.PolicyVariables
 
+(* Resolve templates for a row-column configuration, not for an axis in
+   isolation. Complete generator inputs and judge rubrics can each read fields
+   from either axis. PRODUCT.md 3.3.2 and 3.8.9. *)
+
 module Domain = Slopgrid.Domain
 open Slopgrid.Domain
 module List = FStar.List.Tot.Base
@@ -44,6 +48,9 @@ let resolve (g: Domain.layout) (name: string) (row: nat) (column: nat)
   | None -> None
   | Some (s, i) -> field_for g s i row column
 
+(* An image referenced twice still appears once in the receiving message.
+   Compare reference IDs and keep the first occurrence's attachment record.
+   This does not inspect image bytes or store uploads. PRODUCT.md 3.3.4. *)
 let merge_images (groups: list (list Domain.reference_image)) : Tot (list Domain.reference_image) =
   let rec loop (xs: list Domain.reference_image) (seen: list string)
     : Tot (list Domain.reference_image) (decreases xs) =
@@ -85,6 +92,9 @@ let references (text: string) (g: Domain.layout) (row: nat) (column: nat)
             }])
       (tokens text))
 
+(* Scan only the original template. Insert field text literally and never scan
+   that inserted text for another variable. Leave unknown tokens visible here.
+   prompt_issues rejects them separately. PRODUCT.md 3.3.4. *)
 let interpolate (text: string) (g: Domain.layout) (row: nat) (column: nat)
   : Tot (string & list Domain.reference_image) =
   let rec expand (fuel: nat) (offset: nat) : Tot string (decreases fuel) =
@@ -104,6 +114,9 @@ let interpolate (text: string) (g: Domain.layout) (row: nat) (column: nat)
      (List.map (fun r -> PolicyBase.option_list r.field.field_images)
        (references text g row column)))
 
+(* Select this cell's complete history before expanding each message.
+   Field images join only their referencing user message. Judge-only fields
+   never enter this generator history. PRODUCT.md 3.3.5 and 3.3.9. *)
 let expand_messages (g: Domain.layout) (row: nat) (column: nat) : Tot (list Domain.message) =
   List.map
     (fun message ->
@@ -119,6 +132,9 @@ let expand_messages (g: Domain.layout) (row: nat) (column: nat) : Tot (list Doma
       })
     (PolicyBase.messages g row column)
 
+(* Resolve the selected rubric separately from the generator history.
+   Preserve each question's expected answer while gathering the images that
+   this cell's judge consumes. PRODUCT.md 3.3.5 and 3.8.9. *)
 let resolve_criteria (g: Domain.layout) (row: nat) (column: nat)
   : Tot (list Domain.criterion & list Domain.reference_image) =
   let expanded =
@@ -187,6 +203,9 @@ let active (#a: Type) (v: option a) : Tot bool =
   | None -> false
   | Some _ -> true
 
+(* Cases on one axis share field positions, including deleted slots.
+   Compare the active slots as well as list lengths so a field cannot silently
+   refer to a different column of the case editor in another case. *)
 let shape_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   PolicyBase.flatmap
     (fun side ->
@@ -228,6 +247,9 @@ type template = {
   template_path: list Domain.path_segment
 }
 
+(* Keep each template's owning field path before inspecting its tokens.
+   Treat criterion questions as user text for image references, but reject
+   image-bearing references in judge system text. PRODUCT.md 3.4.2 and 3.7.3. *)
 let templates (g: Domain.layout) (row: nat) (column: nat) : Tot (list template) =
   let generator =
     PolicyBase.mapi
@@ -260,6 +282,9 @@ let templates (g: Domain.layout) (row: nat) (column: nat) : Tot (list template) 
          })
        (PolicyBase.criteria g row column))
 
+(* An unfinished model axis still needs token feedback for the existing input.
+   Index zero here is only an editing fallback. expand_grid below enumerates
+   records actually present in the layout. *)
 let preview_indices (g: Domain.layout) (side: Domain.axis) : Tot (list nat) =
   match PolicyBase.records g side with
   | [] -> [0]
@@ -273,6 +298,9 @@ let cell_templates (g: Domain.layout) : Tot (list (nat & nat & template)) =
         (preview_indices g Domain.Columns))
     (preview_indices g Domain.Rows)
 
+(* Check a reference where its template is used, against both cases at that
+   coordinate. A field name present elsewhere is not enough if this case lacks
+   its value. Unknown and deleted references block admission. PRODUCT.md 3.3.6. *)
 let prompt_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
   let index = variable_index g in
   let used_and_issues =
@@ -319,6 +347,10 @@ let prompt_issues (g: Domain.layout) : Tot (list Domain.validation_issue) =
         | Some i -> [i])
       used_and_issues
   in
+  (* A case dimension must affect generator or judge input. Owning a consumed
+     parameter counts without a dummy variable. Otherwise a referenced field
+     makes the dimension meaningful. Unused extra fields are allowed.
+     PRODUCT.md 3.3.6. *)
   let unused =
     PolicyBase.flatmap
       (fun side ->
@@ -372,6 +404,9 @@ let image_setting (g: Domain.layout) (p: Domain.parameter) (r: nat) (c: nat)
   | None -> None
   | Some v -> Some (PolicyBase.text_value v)
 
+(* Build the inputs used by compatibility checks for this coordinate.
+   The joined Chat text is a preview. The ordered expanded messages retain
+   roles and per-message attachments for the actual checks. PRODUCT.md 3.4.1. *)
 let expand_cell (g: Domain.layout) (budget: option Number.finite) (row: nat) (column: nat)
   : Tot Domain.preview_cell =
   let messages = expand_messages g row column in
@@ -420,6 +455,8 @@ let expand_cell (g: Domain.layout) (budget: option Number.finite) (row: nat) (co
        })
   }
 
+(* Enumerate only existing row-column intersections, not every model paired
+   with every value found somewhere in the form. PRODUCT.md 3.4.2. *)
 let expand_grid (g: Domain.layout) (budget: option Number.finite)
   : Tot (list Domain.preview_cell) =
   PolicyBase.flatmap

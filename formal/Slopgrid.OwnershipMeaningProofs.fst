@@ -1,5 +1,11 @@
 module Slopgrid.OwnershipMeaningProofs
 
+(* Keeping the same stored prompt is not enough: it may use variables from
+   either axis. These proofs also keep each referenced field so ownership
+   moves preserve expanded inputs and judge text. The result is a pure cell
+   description, not a claim about browser state or inference execution.
+   PRODUCT.md 3.1.10 and 3.3.9. *)
+
 module Input = Slopgrid.Input
 module Parameters = Slopgrid.Parameters
 module OwnershipProofs = Slopgrid.OwnershipProofs
@@ -19,8 +25,10 @@ let variable_fields (value: option (value_for PVariable)) : Tot (list (option va
   | None -> []
   | Some (VariableValue fields) -> fields
 
-(* The fields defining an axis's variable slots are exactly the variable
-   value of its first case, with a missing case or value treated as no fields. *)
+(* Variable names are looked up using the first case's slot layout on an
+   axis. This helper relates that lookup to the ordinary case-value reader.
+   It does not claim that all later cases contain the same fields. A missing
+   first case or variable value gives no slots. *)
 let first_variable_projection (input: layout) (side: axis)
   : Lemma (
     VariableSemantics.fields input side ==
@@ -29,8 +37,9 @@ let first_variable_projection (input: layout) (side: axis)
   | [] -> ()
   | _ :: _ -> ()
 
-(* A coordinate's variable-field lookup is the indexed field in that axis
-   case's variable value; a missing case, value, or field yields absence. *)
+(* After finding a variable's axis and slot, read its text and images from
+   the case at this cell's row or column. A missing case, missing variable
+   value, deleted slot or out-of-range slot gives no field. *)
 let variable_at_projection
   (input: layout) (row: nat) (column: nat) (side: axis) (index: nat)
   : Lemma (
@@ -49,6 +58,9 @@ let variable_at_projection
     | None -> ()
     | Some _ -> ()
 
+(* Preserve the axes in case mode, their variable names, and every indexed
+   variable value on those axes. These are the facts needed to keep a token
+   bound to the same field after moving an unrelated setting. *)
 let namespace_frame (before: layout) (after: layout) : prop =
   before.case_ownership == after.case_ownership /\
   before.variable_names == after.variable_names /\
@@ -57,14 +69,18 @@ let namespace_frame (before: layout) (after: layout) : prop =
     CellSemantics.axis_value after side index PVariable ==
       CellSemantics.axis_value before side index PVariable)
 
+(* A cell must keep its position on each active case axis to read the same
+   variables. An ordinary axis can become one neutral position without
+   changing any variable lookup. *)
 let coordinate_frame
   (before: layout) (row: nat) (column: nat) (next_row: nat) (next_column: nat) : prop =
   forall side.
     Parameters.is_case_axis before side ==>
     (if side = Rows then next_row else next_column) == (if side = Rows then row else column)
 
-(* Equal variable-name metadata makes the named-slot search identical for a
-   fixed axis, field list, and starting index, including default names. *)
+(* Searching the same slots with the same variable-name metadata finds the
+   same slot. This includes numbered defaults, whose names depend on the
+   axis and slot index rather than a stored custom name. *)
 let rec slot_in_frame (before: layout) (after: layout) (side: axis)
   (fields: list (option variable_field)) (index: nat) (name: string)
   : Lemma
@@ -76,8 +92,9 @@ let rec slot_in_frame (before: layout) (after: layout) (side: axis)
   | [] -> ()
   | _ :: rest -> slot_in_frame before after side rest (index + 1) name
 
-(* Preserving case ownership, variable names, and variable values on active
-   case axes preserves named-slot lookup on this active axis. *)
+(* If an active axis keeps its names and variable values, looking up a token
+   on that axis still finds the same slot. The proof needs the first case's
+   fields because they determine which slots the name search visits. *)
 let slot_on_frame (before: layout) (after: layout) (side: axis) (name: string)
   : Lemma
     (requires namespace_frame before after /\ Parameters.is_case_axis before side)
@@ -87,8 +104,10 @@ let slot_on_frame (before: layout) (after: layout) (side: axis) (name: string)
   first_variable_projection after side;
   slot_in_frame before after side (VariableSemantics.fields before side) 0 name
 
-(* Preserving case ownership, variable names, and active-axis variable values
-   preserves global named-slot lookup, including precedence between axes. *)
+(* Keeping case ownership, names and active-axis fields leaves token lookup
+   unchanged across the whole grid. Case ownership also records which axis
+   is searched first, so this covers that order rather than assuming names
+   are unique. Unknown tokens remain unknown. *)
 let slot_for_frame (before: layout) (after: layout) (name: string)
   : Lemma
     (requires namespace_frame before after)
@@ -100,8 +119,9 @@ let slot_for_frame (before: layout) (after: layout) (name: string)
     slot_on_frame before after first name;
     slot_on_frame before after (VariableSemantics.other first) name
 
-(* Any axis returned by a successful global variable-slot lookup is an
-   active case axis of the layout. *)
+(* A found token always belongs to an axis in case mode. This lets the
+   environment proof ignore coordinate changes on ordinary axes, which
+   cannot supply a variable even if they contain stray stored fields. *)
 let slot_for_active (input: layout) (name: string) (side: axis) (index: nat)
   : Lemma
     (requires VariableSemantics.slot_for input name == Some (side, index))
@@ -114,9 +134,10 @@ let slot_for_active (input: layout) (name: string) (side: axis) (index: nat)
      | Some _ -> ())
   | BothCaseAxes _ -> ()
 
-(* Equal case ownership, names, and active-axis variable values preserve an
-   identifier's exact optional field when the coordinates on active axes also
-   stay fixed; coordinates on inactive axes need not agree. *)
+(* A token still reads the same optional text-and-image field when its names
+   and active-axis fields stay unchanged and the cell keeps its active-axis
+   coordinates. Coordinates on ordinary axes may differ. This includes
+   unresolved names, not just successful substitutions. *)
 let environment_frame (before: layout) (after: layout)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat) (name: Template.identifier)
   : Lemma
@@ -133,8 +154,9 @@ let environment_frame (before: layout) (after: layout)
     variable_at_projection before row column side index;
     variable_at_projection after next_row next_column side index
 
-(* Taking ownership of a common parameter on a nonempty target axis leaves
-   every axis's indexed variable value exactly unchanged. *)
+(* Copying a shared setting into a nonempty table does not edit numbered or
+   custom variable fields on either axis. Every indexed variable value stays
+   the same, including missing values outside the table. *)
 let own_variable_projection
   (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (axis: axis) (index: nat)
@@ -161,8 +183,10 @@ let own_variable_projection
     | Columns, Rows
     | Columns, Columns -> ()
 
-(* Taking ownership of a common parameter on a nonempty target axis preserves
-   the exact field resolved for any identifier at the same cell coordinates. *)
+(* Moving a shared setting into existing cases keeps every token's field
+   at the same cell coordinates. This matters even for a row-owned prompt
+   that reads COLUMN variables, or a column-owned prompt that reads ROW
+   variables. Stored-input equality alone would not establish this. *)
 let own_environment (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat)
   (name: Template.identifier)
@@ -175,7 +199,8 @@ let own_environment (input: layout) (p: common_parameter) (side: axis) (v: value
       VariableSemantics.field_for next row column name ==
         VariableSemantics.field_for input row column name)) =
   OwnershipProofs.own_preserves_opposite_axis_and_metadata input p side allocation counter;
-  (* For this axis, ownership preserves variable values at every index. *)
+  (* Give the environment proof unchanged variable values for every axis
+     and index, not just the variables used by one selected template. *)
   let for_axis axis =
     FStar.Classical.forall_intro (own_variable_projection input p side v allocation counter axis)
   in
@@ -183,6 +208,10 @@ let own_environment (input: layout) (p: common_parameter) (side: axis) (v: value
   let next, _ = Input.own input p side allocation counter in
   environment_frame input next row column row column name
 
+(* Collapse retains the first case's value only if it is present and no case
+   differs. Otherwise it restores the normal common default. Moving the
+   setting to the end of source_order changes its control order, not its value.
+   This helper stops before neutralizing an axis. PRODUCT.md 3.1.10. *)
 let collapse_stripped (input: layout) (p: common_parameter) (side: axis) : Tot layout =
   let value =
     if Input.differing input p then
@@ -210,9 +239,10 @@ let collapse_stripped (input: layout) (p: common_parameter) (side: axis) : Tot l
       (fun entry -> {entry with values = Parameters.remove_case_value entry.values p})
       (Parameters.entries input side))
 
-(* For an axis-owned parameter, collapse is exactly neutralization of the
-   layout with a selected common value and that parameter's case fields
-   removed, including the returned allocation counter. *)
+(* Returning an axis-owned setting to common first chooses its shared value
+   and removes that field from the cases, then checks whether the dimension
+   needs one neutral position. This helper matches that sequence exactly,
+   including case-ID allocation, so later proofs can treat the steps apart. *)
 let collapse_unfold (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat)
   : Lemma
@@ -228,8 +258,9 @@ let collapse_unfold (input: layout) (p: common_parameter) (side: axis)
       FStar.Tactics.norm [delta_only [`%Input.collapse; `%collapse_stripped]];
       FStar.Tactics.smt ())
 
-(* Collapsing an axis-owned parameter preserves case ownership, variable
-   names, output format, judging, and worker count exactly. *)
+(* Returning a setting to common does not change which axes are case tables
+   or rename their variables. It also leaves format, judging and worker count
+   alone. This supplies the non-value parts of the cell-equality proof. *)
 let collapse_metadata (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat)
   : Lemma
@@ -248,9 +279,10 @@ let collapse_metadata (input: layout) (p: common_parameter) (side: axis)
   | Rows
   | Columns -> ()
 
-(* Collapsing an axis-owned parameter preserves every indexed variable value
-   and the entry count on each active case axis, even if the collapsed
-   parameter belongs to that same axis. *)
+(* Returning a setting to common never shrinks an active case table, even
+   when it removes that table's last non-variable setting. Its variable values
+   stay at the same indices. This keeps equal or blank cases distinct as
+   required by PRODUCT.md 3.1.10. *)
 let collapse_active_projection (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat) (active: axis) (index: nat)
   : Lemma
@@ -286,8 +318,9 @@ let collapse_active_projection (input: layout) (p: common_parameter) (side: axis
     | Columns, Rows
     | Columns, Columns -> ()
 
-(* Collapsing an axis-owned parameter preserves indexed variable values on
-   any axis that was active; the implication makes no claim for inactive axes. *)
+(* Variable values stay unchanged on every axis that was in case mode before
+   collapse. This implication packages that fact for token lookup. It makes
+   no claim about stray fields stored on ordinary axes. *)
 let collapse_namespace_projection (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat) (active: axis) (index: nat)
   : Lemma
@@ -302,8 +335,9 @@ let collapse_namespace_projection (input: layout) (p: common_parameter) (side: a
   else
     ()
 
-(* After collapse of an axis-owned parameter, the corresponding coordinate
-   on every originally active case axis is the original coordinate. *)
+(* Collapse leaves active case tables the same length, so their corresponding
+   row or column coordinates do not move. Only an ownerless ordinary dimension
+   can redirect a former coordinate to the neutral position. *)
 let collapse_coordinate_frame (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat) (active: axis)
   : Lemma
@@ -324,9 +358,10 @@ let collapse_coordinate_frame (input: layout) (p: common_parameter) (side: axis)
   ) else
     ()
 
-(* Collapsing an axis-owned parameter preserves each identifier's exact
-   optional variable field at the corresponding coordinates, without requiring
-   uniform parameter values or in-range coordinates. *)
+(* Returning a setting to common keeps every token's optional field at the
+   corresponding cell. This holds even when that setting's values differ or
+   the supplied coordinates are out of range. It preserves variable lookup,
+   not the moved setting's value in those cases. *)
 let collapse_environment (input: layout) (p: common_parameter) (side: axis)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat)
   (name: Template.identifier)
@@ -339,8 +374,8 @@ let collapse_environment (input: layout) (p: common_parameter) (side: axis)
         (OwnershipProofs.corresponding_column input next column) name ==
       VariableSemantics.field_for input row column name)) =
   collapse_metadata input p side allocation counter;
-  (* For this axis, collapse preserves variable values at every index if the
-     axis was active in the original layout. *)
+  (* Supply unchanged fields for every originally active axis. The separate
+     coordinate fact below keeps each lookup on its original case. *)
   let for_axis axis =
     FStar.Classical.forall_intro
       (collapse_namespace_projection input p side allocation counter axis)
@@ -352,8 +387,10 @@ let collapse_environment (input: layout) (p: common_parameter) (side: axis)
     (OwnershipProofs.corresponding_row input next row)
     (OwnershipProofs.corresponding_column input next column) name
 
-(* Semantically equivalent resolved values give identical effective parameter
-   meanings when every identifier resolves to exactly the same field. *)
+(* To keep an expanded setting unchanged, preserve both its stored value up
+   to empty-image normalization and every token's optional field. This covers
+   prompt messages and judge templates. Preserving only the source template
+   would miss changes in referenced text or images. PRODUCT.md 3.3.9. *)
 let parameter_frame (before: layout) (after: layout)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat) (p: common_parameter)
   : Lemma
@@ -373,9 +410,9 @@ let parameter_frame (before: layout) (after: layout)
     (CellSemantics.resolve after next_row next_column p)
     (CellSemantics.resolve before row column p)
 
-(* Equivalent resolution of every common parameter and pointwise equal
-   variable environments give identical ordered parameter-meaning pairs for
-   the supplied parameter list. *)
+(* Apply the preceding argument to each requested setting in the supplied
+   order. The result keeps that exact ordered list of expanded values.
+   It does not compare the layout's source_order or case-header metadata. *)
 let rec parameters_frame (before: layout) (after: layout)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat)
   (parameters: list common_parameter)
@@ -397,9 +434,10 @@ let rec parameters_frame (before: layout) (after: layout)
     parameter_frame before after row column next_row next_column p;
     parameters_frame before after row column next_row next_column rest
 
-(* Equivalent common-parameter values and pointwise equal variable
-   environments give identical effective cell meanings when output format,
-   judging, and worker count also agree exactly. *)
+(* The pure cell description stays the same when stored settings are
+   equivalent, token lookups match, and format, judging and worker count agree.
+   Its setting list has a fixed order, independent of editor bookkeeping.
+   This says nothing about executing a request or validating the whole form. *)
 let cell_frame (before: layout) (after: layout)
   (row: nat) (column: nat) (next_row: nat) (next_column: nat)
   : Lemma
@@ -425,8 +463,10 @@ let cell_frame (before: layout) (after: layout)
       Template.map_g (fun p -> (p, CellMeaning.parameter before row column p))
         CellMeaning.all_parameters)
 
-(* Taking ownership of a common value preserves each common parameter up to
-   semantic equivalence at the same coordinates when the target index exists. *)
+(* Copying a shared setting into existing cases keeps the stored value chosen
+   for each parameter at this cell. Empty image lists count as no images.
+   The destination case must exist. The following proof also checks what
+   happens when these stored templates read variable fields. *)
 let own_equivalent_parameter
   (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat) (q: common_parameter)
@@ -443,9 +483,11 @@ let own_equivalent_parameter
   | None
   | Some _ -> ()
 
-(* Taking ownership of a common value preserves both the effective cell
-   meaning and its template-validity-gated observable meaning at the same
-   coordinates, provided the target-axis index exists. *)
+(* Copying a shared setting into existing cases preserves the expanded
+   generator input, judge templates and other settings at the same cell.
+   The target index must already exist. The optional cell result also keeps
+   the same template-validity decision, not all form validation or inference
+   behavior. PRODUCT.md 3.1.10 and 3.3.9. *)
 let own_cell (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat)
   : Lemma
@@ -466,9 +508,10 @@ let own_cell (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   let next, _ = Input.own input p side allocation counter in
   cell_frame input next row column row column
 
-(* Collapsing an axis-owned parameter preserves every common parameter up to
-   semantic equivalence at corresponding coordinates when all owner-axis
-   values are equivalent to v and the original owner index exists. *)
+(* Every owning case must contain the same complete value, and the old cell
+   must have an owning case. Returning the setting to a shared control then
+   keeps each chosen parameter value at the corresponding cell. Empty image
+   lists may differ. The expanded-cell proof checks variable fields next. *)
 let collapse_equivalent_parameter
   (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat) (q: common_parameter)
@@ -486,9 +529,11 @@ let collapse_equivalent_parameter
         (CellSemantics.resolve input row column q))) =
   OwnershipProofs.collapse_preserves_every_parameter input p side v allocation counter q row column
 
-(* Collapsing an axis-owned parameter preserves effective and
-   template-validity-gated observable cell meanings at corresponding
-   coordinates if its cases are uniformly equivalent to v and its index exists. *)
+(* Returning equal, complete case values to common preserves the expanded
+   cell description and its template-validity decision. The old owner index
+   must exist. An unchanged dimension keeps its coordinate, while a reduced
+   ordinary dimension uses zero. Differing or missing case values do not
+   satisfy this preservation law. PRODUCT.md 3.1.10 and 3.3.9. *)
 let collapse_cell (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (allocation: string & list string) (counter: nat) (row: nat) (column: nat)
   : Lemma
@@ -515,9 +560,10 @@ let collapse_cell (input: layout) (p: common_parameter) (side: axis) (v: value_f
     (OwnershipProofs.corresponding_row input next row)
     (OwnershipProofs.corresponding_column input next column)
 
-(* MoveToAxis preserves effective and template-validity-gated observable cell
-   meanings at the same coordinates when the parameter is common and the
-   target index exists; an inactive target axis is left unchanged. *)
+(* MoveToAxis keeps the expanded cell description and its template-validity
+   decision when the setting was shared and the target position exists.
+   A destination outside case mode is a no-op. This proves the pure edit's
+   behavior, not the browser's destination chooser. PRODUCT.md 3.1.10. *)
 let move_to_axis_cell (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (prefix: string) (counter: nat) (row: nat) (column: nat)
   : Lemma
@@ -534,9 +580,11 @@ let move_to_axis_cell (input: layout) (p: common_parameter) (side: axis) (v: val
   else
     ()
 
-(* MoveToCommon preserves effective and template-validity-gated observable
-   cell meanings at corresponding coordinates when the parameter is axis-owned,
-   its cases are uniformly equivalent to v, and the original owner index exists. *)
+(* MoveToCommon keeps the expanded cell description and its template-validity
+   decision at corresponding coordinates when every owning case contains the
+   same complete value and the old owner position exists. The law covers
+   retaining equal values, not confirmation or resetting differing ones.
+   PRODUCT.md 3.1.10 and 3.3.9. *)
 let move_to_common_cell (input: layout) (p: common_parameter) (side: axis) (v: value_for p)
   (prefix: string) (counter: nat) (row: nat) (column: nat)
   : Lemma
