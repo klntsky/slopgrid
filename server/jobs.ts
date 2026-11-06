@@ -354,10 +354,11 @@ export class Jobs {
       grid.status = "paused";
       delete state.key;
       grid.interruption = "billing";
-      for (const task of state.tasks) clearTaskRetry(task);
+      const changed = state.tasks.filter((task) => task.retrying);
+      for (const task of changed) clearTaskRetry(task);
       this.executor.clear(state.tasks);
       if (!this.hasUnsettledCalls(grid.id)) this.settleState(grid, state.tasks);
-      this.emit(state, []);
+      this.emit(state, changed);
     }
   }
 

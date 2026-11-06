@@ -27,6 +27,7 @@ export function createAuthRoutes({
   app.delete("/api/session/key", (req, res) => {
     const s = session(req, res);
     delete s.key;
+    delete s.keyOAuth;
     store.saveSession(s);
     res.json({ connected: false });
   });
@@ -66,18 +67,25 @@ export function createAuthRoutes({
           "Connection expired or was cancelled. Return to settings and connect again.",
         );
     const { verifier, returnTo } = pending;
-    delete s.keyOAuth;
+    pending.exchanging = true;
     store.saveSession(s);
     try {
       const key = await provider.exchangeKey(req.query.code, verifier);
       const current = store.session(s.id);
-      if (!current || current.keyOAuth)
+      if (current?.keyOAuth?.state !== pending.state)
         return res.redirect(`${returnTo}?connection=failed`);
       current.key = key;
+      delete current.keyOAuth;
       store.saveSession(current);
       res.redirect(returnTo);
     } catch {
       res.redirect(`${returnTo}?connection=failed`);
+    } finally {
+      const current = store.session(s.id);
+      if (current?.keyOAuth?.state === pending.state) {
+        delete current.keyOAuth;
+        store.saveSession(current);
+      }
     }
   });
   return app;

@@ -5,6 +5,8 @@ workflow execution, provider integration, and content storage. This document
 describes responsibility, state ownership, and trust boundaries. Product
 behavior belongs in [PRODUCT.md](PRODUCT.md), while setup and operational
 commands belong in [DEVELOPMENT.md](DEVELOPMENT.md).
+The [state-machine inventory](STATE-MACHINES.md) records states, invariants,
+transition tables, and evidence-backed audit findings across these boundaries.
 
 ## Process boundaries
 

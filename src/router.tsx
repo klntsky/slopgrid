@@ -65,7 +65,10 @@ const billingRoute = createRoute({
 const gridRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/grid/$id",
-  component: () => <GridPage id={gridRoute.useParams().id} />,
+  component: () => {
+    const { id } = gridRoute.useParams();
+    return <GridPage key={id} id={id} />;
+  },
 });
 const slugRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -74,7 +77,10 @@ const slugRoute = createRoute({
     if (!isGridSlug(params.slug)) throw notFound();
     return api<{ id: string }>(`/grid-slugs/${params.slug}`);
   },
-  component: () => <GridPage id={slugRoute.useLoaderData().id} />,
+  component: () => {
+    const { id } = slugRoute.useLoaderData();
+    return <GridPage key={id} id={id} />;
+  },
   errorComponent: ({ error }) => (
     <main>
       <ErrorMessage>

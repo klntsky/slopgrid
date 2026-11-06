@@ -47,15 +47,18 @@ export function createIdentityRoutes(
         return res
           .status(400)
           .send("Sign-in expired or was cancelled. Sign in again.");
-      delete s.identityOAuth;
+      pending.exchanging = true;
       store.saveSession(s);
       const failed = `${pending.returnTo}?signin=failed`;
       if (
         typeof req.query.code !== "string" ||
         !req.query.code ||
         req.query.error
-      )
+      ) {
+        delete s.identityOAuth;
+        store.saveSession(s);
         return res.redirect(failed);
+      }
       try {
         const profile = await provider.identity(
           new URL(req.originalUrl, origin).searchParams,
@@ -65,7 +68,10 @@ export function createIdentityRoutes(
         );
         // A logout, account switch, or new sign-in during exchange invalidates this result.
         const current = store.session(s.id);
-        if (!current || current.identityOAuth || current.userId !== s.userId)
+        if (
+          current?.identityOAuth?.state !== pending.state ||
+          current.userId !== s.userId
+        )
           return res.redirect(failed);
         store.db.transaction(() => {
           const user = store.identify(
@@ -80,6 +86,12 @@ export function createIdentityRoutes(
         res.redirect(pending.returnTo);
       } catch {
         res.redirect(failed);
+      } finally {
+        const current = store.session(s.id);
+        if (current?.identityOAuth?.state === pending.state) {
+          delete current.identityOAuth;
+          store.saveSession(current);
+        }
       }
     });
   }

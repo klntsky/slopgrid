@@ -21,7 +21,8 @@ function serial(work) {
 async function currentScope() {
   if (scope === undefined) {
     const saved = await (await caches.open(STATE)).match("/__offline_scope");
-    scope = saved ? await saved.text() : "public";
+    const restored = saved ? await saved.text() : "public";
+    if (scope === undefined) scope = restored;
   }
   return scope;
 }
@@ -243,6 +244,10 @@ async function gridRequest(request, event, background = false) {
     const controller = new AbortController();
     const headers = new Headers(request.headers);
     headers.delete("X-Slopgrid-Grid-Read");
+    const transport = new Request(request, {
+      headers,
+      signal: controller.signal,
+    });
     flight = {
       key,
       controller,
@@ -253,11 +258,12 @@ async function gridRequest(request, event, background = false) {
       work: undefined,
     };
     pending.set(key, flight);
-    flight.work = network(
-      new Request(request, { headers, signal: controller.signal }),
-      event,
-      flight,
-    )
+    flight.work = network(transport, event, flight)
+      .catch((error) => {
+        if (controller.signal.aborted) throw error;
+        flight.bodySettled = false;
+        return network(transport, event, flight);
+      })
       .then((response) => {
         if (flight.bodySettled || !response.body) {
           finishGridFlight(flight);
@@ -289,6 +295,10 @@ async function gridRequest(request, event, background = false) {
             headers: response.headers,
           },
         );
+      })
+      .catch((error) => {
+        finishGridFlight(flight);
+        throw error;
       })
       .finally(() => {
         if (pending.get(key) === flight) pending.delete(key);
@@ -430,6 +440,10 @@ const outputPath = (path) =>
     path,
   );
 const offlinePath = (path) => /^\/offline\/outputs\/[a-f0-9]{48}\//.test(path);
+const staleResponse = (url) =>
+  url.pathname.startsWith("/api/")
+    ? staleGrid()
+    : unavailable(outputPath(url.pathname) || offlinePath(url.pathname));
 
 async function network(request, event, gridFlight) {
   const url = new URL(request.url);
@@ -458,11 +472,8 @@ async function network(request, event, gridFlight) {
     } else response = await fetch(request);
   } catch (error) {
     if (request.signal.aborted) throw error;
-    if (offlinePath(url.pathname))
-      return (await cached(request.url)) ?? unavailable(true);
     const saved = await cached(request.url);
-    if ((image || grid) && started !== epoch)
-      return grid ? staleGrid() : unavailable(true);
+    if (started !== epoch) return staleResponse(url);
     if (saved) {
       if (url.pathname.startsWith("/api/")) {
         const headers = new Headers(saved.headers);
@@ -504,9 +515,9 @@ async function network(request, event, gridFlight) {
     await store(request.url, savedImage, started);
     return started === epoch ? savedImage : unavailable(true);
   }
-  if (grid && started !== epoch && previous === next) return staleGrid();
-  if (!next || !(await partition(next, previous, started)))
-    return grid && next ? staleGrid() : response;
+  if (started !== epoch && previous === next) return staleResponse(url);
+  if (!next) return response;
+  if (!(await partition(next, previous, started))) return staleResponse(url);
   const expected = epoch;
   if (!response.ok) {
     // An authoritative denial must never fall back to private cached content.
@@ -514,7 +525,7 @@ async function network(request, event, gridFlight) {
       if (expected === epoch)
         await (await caches.open(PREFIX + scope)).delete(request.url);
     });
-    return response;
+    return expected === epoch ? response : staleResponse(url);
   }
   if (grid) {
     const grid = await response.clone().json();
@@ -525,8 +536,6 @@ async function network(request, event, gridFlight) {
       expected,
     );
     event.waitUntil(saveGridOutputs(grid, expected));
-    if (expected !== epoch || next !== (await currentScope()))
-      return staleGrid();
   } else if (
     pagePath(url.pathname) ||
     apiPath(url.pathname) ||
@@ -551,7 +560,9 @@ async function network(request, event, gridFlight) {
       }
     }
   }
-  return response;
+  return expected === epoch && next === (await currentScope())
+    ? response
+    : staleResponse(url);
 }
 function unavailable(output) {
   return new Response(
@@ -638,8 +649,8 @@ self.addEventListener("fetch", (event) => {
           ? gridRequest(request, event)
           : network(request, event)
     ).catch(async (error) => {
-      if (gridPath(url.pathname) && error?.name === "AbortError")
-        return Response.error();
+      if (gridPath(url.pathname))
+        return error?.name === "AbortError" ? Response.error() : staleGrid();
       try {
         return await fetch(request);
       } catch {

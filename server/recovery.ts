@@ -10,7 +10,10 @@ export function recoverInterruptedGrids(store: Store) {
     if (grid.status !== "running" && !running.length) continue;
     grid.status = "paused";
     grid.interruption = "restart";
-    for (const task of running) queueTask(task);
-    store.saveWorkflow(grid, running);
+    const interrupted = tasks.filter(
+      (task) => task.status === "running" || task.status === "pending",
+    );
+    for (const task of interrupted) queueTask(task);
+    store.saveWorkflow(grid, interrupted);
   }
 }

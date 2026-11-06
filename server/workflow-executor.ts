@@ -87,7 +87,7 @@ export function createWorkflowExecutor(store: Store, provider: Provider) {
       const thinkingId = token();
       const ids = referenceIds(task.input);
       const inputReferences = ids.length
-        ? await store.references.loader()(ids)
+        ? await context.retryStorage(() => store.references.loader()(ids))
         : undefined;
       context.signal.throwIfAborted();
       if (!context.current()) throw new DOMException("Paused", "AbortError");
