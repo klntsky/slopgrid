@@ -40,6 +40,7 @@ export type OAuthAttempt = {
   state: string;
   startedAt: number;
   returnTo: string;
+  exchanging?: boolean;
 };
 export function startOAuth(provider: string, returnTo: unknown): OAuthAttempt {
   return {
@@ -53,6 +54,7 @@ export function startOAuth(provider: string, returnTo: unknown): OAuthAttempt {
 export function validOAuth(attempt: OAuthAttempt | undefined, state: unknown) {
   return (
     !!attempt &&
+    !attempt.exchanging &&
     state === attempt.state &&
     Date.now() - attempt.startedAt <= 600000
   );

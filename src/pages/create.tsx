@@ -232,6 +232,7 @@ export function Create() {
     <ValidationProvider issues={validationIssues}>
       <main
         className={`create-page${caseLayoutActive ? " case-layout-active" : ""}`}
+        inert={submission.uploading || busy}
       >
         <div className="page-heading">
           <h1>Create your own AI model benchmark</h1>

@@ -24,13 +24,21 @@ export function useCreateSubmission({
   const pendingUploads = useRef(0);
   const uploading = uploads > 0;
   const uploadController = useRef<AbortController | undefined>(undefined);
-  useEffect(() => () => uploadController.current?.abort(), []);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      uploadController.current?.abort();
+    };
+  }, []);
   const navigate = useNavigate();
   const inference = useInferenceMutation<{
     id: string;
     startOutcome: "started" | "not_started" | "unknown";
   }>(async (grid) => {
     await queryClient.invalidateQueries({ queryKey: ["grids"] });
+    if (!mounted.current) return;
     clearDraft();
     await navigate({ to: "/grid/$id", params: { id: grid.id } });
   });

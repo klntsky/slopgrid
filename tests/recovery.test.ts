@@ -218,3 +218,60 @@ test("recovery preserves a shared generation and settled judgment while requeuin
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("restart clears scheduled retries without erasing permanent task failures", () => {
+  const dir = mkdtempSync(join(tmpdir(), "slopgrid-retry-recovery-"));
+  const store = new Store(":memory:", Buffer.alloc(32, 2), dir);
+  try {
+    const input = currentInput({
+      caseAxes: ["rows"],
+      rows: [
+        { variable: [{ text: "retrying" }] },
+        { variable: [{ text: "failed" }] },
+      ],
+      parameters: {
+        input: {
+          kind: "common",
+          value: [{ role: "user", content: "$ROW1" }],
+        },
+      },
+    });
+    const grid: Grid = {
+      id: "retry-recovery",
+      owner: "owner",
+      input,
+      cells: expandGrid(input).map((cell, index) => ({
+        ...cell,
+        id: `retry-recovery-cell-${index}`,
+      })),
+      published: false,
+      visibility: "private",
+      status: "running",
+      createdAt: new Date().toISOString(),
+    };
+    const tasks = createWorkflow(gridSchema.parse(input), grid.cells);
+    tasks[0].retrying = true;
+    tasks[0].error = "Rate limited";
+    tasks[0].errorCode = 429;
+    tasks[1].status = "error";
+    tasks[1].error = "Invalid model";
+    tasks[1].errorCode = 400;
+    store.insert(validatedGrid(grid), tasks);
+    recoverInterruptedGrids(store);
+    const recovered = store.get(grid.id)!;
+    assert.equal(recovered.status, "paused");
+    assert.equal(recovered.interruption, "restart");
+    assert.equal(recovered.cells[0].status, "pending");
+    assert.equal(recovered.cells[0].retrying, undefined);
+    assert.equal(recovered.cells[0].error, undefined);
+    assert.equal(recovered.cells[0].errorCode, undefined);
+    assert.equal(recovered.cells[1].status, "error");
+    assert.equal(recovered.cells[1].error, "Invalid model");
+    assert.equal(recovered.cells[1].errorCode, 400);
+    recoverInterruptedGrids(store);
+    assert.deepEqual(store.get(grid.id), recovered);
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

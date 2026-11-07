@@ -169,6 +169,7 @@ Show a small-text footer on every page except the grid page, with "source code" 
 6. Grid creation has no application limit on prompt length, axis-value length, model-ID length, submission size, number of axis values, cells, or requested parallel workers. Accept these inputs subject to OpenRouter's limits. Actual concurrency follows the shared worker allocation policy.
 7. Arrange short axis choices, including aspect ratios, size presets, quality, background, and thinking efforts, as inline checkboxes that wrap onto additional rows as needed. Keep each checkbox and its label together.
 8. Clear the creation draft after successful grid creation so the next format selection starts a fresh setup. Preserve drafts through failed or unacknowledged creation attempts. Edit and Fork explicitly restore the selected grid's setup.
+   - Keep the submitted setup unchanged while image uploads or grid creation are pending. Leaving the creation page preserves any newer draft and navigation choice when an earlier request finishes.
 9. Markdown, Image, SVG, and Static website prompts accept image attachments alongside their text. Preserve compatible complete inputs through reload, authorization, format changes, Edit, and Fork. A prompt and its images are one user-message input; changing to Chat completion preserves that message and its attachments. Merge attached images with referenced case-field images for generation, and include the resulting input context when judging supported output types. Markdown, SVG, and Website support image-only prompts; Image generation retains its nonempty instruction requirement.
 10. Each applicable parameter has exactly one source: common, rows, or columns. An ordinary dimension compares one parameter using the existing model selector, checkboxes, or custom-size controls beneath its native Rows/Columns dropdown. Keep the swap control between the two ordinary axis-control areas.
     - Always offer selectable "Single row" and "Single column" modes in their respective dropdowns, and label the case-dimension choice "Multiple cases".
@@ -343,6 +344,7 @@ appends one empty question with expected answer YES to the selected rubric.
 1. Title and input text are separate values. A new title is empty. Grid lists use a custom title when set; otherwise, use an expanded prompt that replaces each variable in a common input with that field's values across its axis cases, in order, formatted as (value1|value2|...). Use attachment filenames for image-only prompts, Chat messages, and fields. Limit the expanded prompt to 160 characters, including a trailing "..." when truncated, without splitting Unicode characters.
    - For case-owned prompts and Chat histories, expand the input against each row-column combination, including references to fields from the opposite axis. Combine distinct results in grid order, retaining filename fallbacks for image-only inputs and fields.
 2. In the navbar, show "Set Title" when the owner has not set a title, or the title when set, followed by a centered dot and the original input text. For a common Chat history, include message roles and bodies in order. For case-owned inputs, include each case's original prompt or history under its "Row case N" or "Column case N" label. Keep variable references unexpanded in this text. Owners can set or change the title independently of the input, including after publication.
+   - Navigating directly between grids, including through browser history, shows the destination's title and controls. An earlier grid's pending title edit or dialog must not follow the user to another grid.
 3. Limit titles to 40 characters. Neither the title nor "Set Title" may be ellipsized.
 4. Title text is dark in light mode and white in dark mode. Prompt text uses the same accent color as "grid" in the wordmark.
 5. Collapse long input text, with a hover element showing the complete text.
@@ -505,6 +507,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Keep the grid updated while queued or active generation, cancellation, or saving can still change its results or charges. Reloading or reconnecting must recover the current state and continue receiving updates. A storage failure must not unnecessarily stop authorized live progress or present unsaved completion as durable. Deny access when authorization cannot be checked.
 5. Delayed updates must not move title, output, thinking, status, or price backward, including after a restart. Retries must show content from the current attempt.
 6. Interrupted unfinished work requires an explicit Resume, preserving completed outputs.
+   - Cancelling an automatic retry through Pause, a billing interruption, or restart clears its temporary error from queued work. Preserve errors on failed tasks.
 7. Live updates send changed fields and newly appended output or thinking without repeating the accumulated text or unchanged cells. Reconnecting recovers changes since the last received update when its recovery state is available; otherwise send one current snapshot and continue incrementally. Bound recovery storage and keep it isolated by viewer and grid. Prefer resumed live updates to full-grid downloads, and keep retry throttling through repeated short-lived connections.
 8. Multiple tabs receive live updates independently. Bursts of generation updates must not force an actively reading tab to reconnect.
 
@@ -547,12 +550,14 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 6. Preserve the initiating inference connection during identity changes so signing in or out does not silently replace credentials or interrupt accepted work.
 7. Freeze author attribution at first publication. Later claims, sign-ins, or profile changes must not rewrite a published grid's author; unpublished grids may show the current identity.
 8. Preserve access across browser restarts without periodic sign-in for as long as the browser permits, until the user signs out or access is revoked. Clearing browser session data removes that browser's access.
+9. Only the latest sign-in attempt may complete. Starting another attempt or signing out cancels earlier pending and in-flight sign-ins, including when the newer attempt is cancelled or fails.
 
 ### 8.2. Inference credentials
 
 1. Keep OpenRouter connections browser/session-scoped; do not attach them to the GitHub account or copy them to other browsers.
 2. Remember manually entered keys only in the current browser. The server may use them for connection checks and generation but must not retain them after they are no longer needed for execution.
 3. Support OpenRouter OAuth connections alongside browser-stored manual keys, with each flow's credential lifecycle handled independently.
+   - Disconnect cancels pending and in-flight OpenRouter authorization. Only the latest connection attempt may save its credentials, and each callback is single-use.
 4. Public responses must not expose credentials, session ownership tokens, or private runtime data.
 
 ### 8.3. Publication and discovery
@@ -574,6 +579,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 
 1. Private output belongs to the owning user account and is accessible from any live session signed into that account, including direct output links in another browser. Anonymous grids remain accessible through their anonymous browser identity until claimed on sign-in. Knowing a grid, output, preview, download, or thinking URL does not grant access to another user or an unauthenticated visitor.
 2. Enforce ownership and session access for every output format, website asset, preview, download, and thinking trace. Retain offline copies of visited ready outputs and pages for the current session. Sign-out and observed session changes clear those offline copies. Offline access cannot observe remote session revocation until reconnection.
+   - Reads started before an observed session change must not expose the previous session's private response or fall back to the new session's private cache.
 3. Give each live generated website its own origin, isolating application cookies and site data and the cookies and site data of other outputs. Allow live iframe content the browser's normal capabilities, including network access, scripts, workers, WebAssembly, storage, forms, popups, downloads, audio, and permission-gated APIs. Browser permission prompts, user activation, and cross-origin rules still apply.
 4. Generated HTML must not access or modify application sessions or another output's private data. Authorize application-hosted output files against the requested output and its viewer; external resource requests remain available under normal browser rules.
 5. Offline website copies use self-contained cached resources and cannot access application cookies or site data. They make no network requests.
@@ -595,6 +601,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Open browser tabs retain access to their frontend assets across updates. Routine deployments preserve grids, outputs, credentials, and sessions.
    - After configuration upgrades, existing saved grids remain viewable, editable or forkable under their normal access rules. Preserve their effective per-cell inputs, Chat histories, judge criteria, attachments, grid and output links, publication metadata, completed work, and billing history.
 4. Temporary storage failures pause new generation while preserving accepted work and its results. This includes later provider calls within an active Chat completion; wait for billing writes before issuing another request, and allow Pause to cancel the wait. Continue automatically after recovery unless the user has paused or maintenance is underway. A storage interruption must not require manual Resume or cause duplicate provider charges.
+   - Apply the same recovery to temporary failures while loading input attachments and completed artifacts for judging, preserving the current attempt without repeating provider calls.
 5. Recovery from disk-full errors is outside the supported failure-recovery scope.
 
 ### 9.1. Progressive web app and offline navigation
@@ -605,6 +612,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 3. Exclude outputs still being generated from the offline output cache. A visited output becomes eligible when generation completes. During a temporary disconnection, keep already-loaded output visible across all formats, including incomplete previews and raw and expanded views, while showing the global reconnecting badge for live grids. Preserve loaded website documents and their local state instead of replacing them with offline copies. Resume live output after reconnection.
 4. Cache fetched pages and their fetched data so the user can navigate those pages offline, including fetched grid-list pages and visited grids.
 5. Refresh mutable grid data and resume live progress after reconnection. Reuse already-loaded ready output and thinking bodies; fetch missing bodies when the connection returns. Share foreground grid refreshes with offline retention when they need the same saved state. Keep authentication exchanges and inference mutations out of the offline cache, and do not queue mutations for automatic submission after reconnecting.
+   - Cancelling the last consumer of a grid read also cancels any active transport retry. Shared readers and offline retention continue while another consumer still needs that read.
 6. Use `slopgrid` as the installed app name and `Generate and compare AI outputs in a grid.` as its description. Use `This page isn't available offline.` and `This output isn't available offline.` when the respective cached content is unavailable, with `Retry` for retry controls.
 7. Keep cached content replaceable: evict older cached data when a quota error prevents a write, and preserve online operation when storage is unavailable. The server retains the original grids and outputs.
 8. Cache uploaded image bytes aggressively while keeping private caches scoped to the current account or anonymous session. Recheck private-image access before online reuse, reuse cached bytes when the content is unchanged, and clear private cached content on logout or account changes. Keep visited completed conversations and their attachments available offline.

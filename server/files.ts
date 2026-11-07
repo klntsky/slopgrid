@@ -12,6 +12,7 @@ import {
 import { join, dirname } from "node:path";
 import { readdir, readFile, access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
+import { recoverableStorageError } from "./persistence.js";
 
 export type ArtifactBundle = {
   files: Record<string, Uint8Array>;
@@ -161,7 +162,8 @@ export class OutputFiles {
       const thinking = this.thinkingFile(thinkingSourceId, thinkingId);
       if (!thinking) return;
       return { files, thinking: await readFile(thinking) };
-    } catch {
+    } catch (error) {
+      if (recoverableStorageError(error)) throw error;
       return;
     }
   }

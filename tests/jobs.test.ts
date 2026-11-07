@@ -231,6 +231,39 @@ test("budget-specific 403 pauses queued work while active calls finish", async (
   }
 });
 
+test("billing pause durably clears another grid's scheduled retry", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  const h = harness(2);
+  try {
+    const retrying = h.grid("alice", "retrying", 1);
+    const billing = h.grid("alice", "billing", 1);
+    h.jobs.start(retrying);
+    h.jobs.start(billing);
+    await flush();
+    h.provider.fail(retrying.cells[0].generationId!, 429, {
+      responseHeaders: { "retry-after": "5" },
+    });
+    await flush();
+    assert.equal(h.store.workflow(retrying.id)[0].errorCode, 429);
+    h.provider.fail(billing.cells[0].generationId!, 402);
+    await flush();
+    const paused = h.jobs.snapshot(retrying.id)!;
+    assert.equal(paused.live, false);
+    assert.equal(paused.status, "paused");
+    assert.equal(paused.interruption, "billing");
+    assert.equal(paused.cells[0].retrying, undefined);
+    const task = h.store.workflow(retrying.id)[0];
+    assert.equal(task.retrying, undefined);
+    assert.equal(task.error, undefined);
+    assert.equal(task.errorCode, undefined);
+    t.mock.timers.tick(60000);
+    await flush();
+    assert.equal(h.provider.started.length, 2);
+  } finally {
+    await h.close();
+  }
+});
+
 test("grid requests cap their own workers when another grid raises the owner's limit", async () => {
   const h = harness(4);
   try {
