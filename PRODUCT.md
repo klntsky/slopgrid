@@ -6,6 +6,12 @@ This document defines Slopgrid's product behavior and user experience.
 
 1. Provide Open Graph link previews using `slopgrid` as the title and site name, the site description, and the same grid screenshot shown in the README. Use the exact site description as the preview image alt text.
 2. Provide search engines with structured metadata identifying the Slopgrid website and browser-based application as related entities. Reuse the site name, description, public URL, and application screenshot, and make the metadata available in the initial HTML.
+3. Serve a public Markdown product reference at `/index.md` and a concise `/llms.txt` guide linking to that reference, the homepage, and the source repository. Describe supported comparisons, output formats, inference prerequisites, judging, and publication rules using public product information.
+4. Serve `/robots.txt` with a general crawler policy that permits public pages and frontend assets, excludes API, generated-output, and offline-data paths, and identifies the sitemap. Keep account and creation pages crawlable so their indexing directives can be read.
+5. Serve `/sitemap.xml` with the canonical homepage URL, `https://slopgrid.com/`. Keep personalized listings and user grid URLs out of this discovery feed.
+6. Give the homepage, `/index.html`, and `/grids` the canonical URL and Open Graph URL `https://slopgrid.com/`, including when listing pagination is present. Link their initial HTML to `/llms.txt` and the alternate Markdown reference.
+7. Make the homepage heading, the introduction "Generate multiple LLM outputs at once and compare them side-by-side.", and an "About slopgrid" link to `/index.md` readable before JavaScript runs. Keep the introduction and reference link available in the interactive homepage.
+8. Mark `/create`, `/settings`, and `/billing` as unsuitable for indexing with `noindex, nofollow` response directives. Apply homepage canonical metadata and initial homepage content only to homepage routes.
 
 ## Presentation and interaction requirements
 

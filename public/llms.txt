@@ -1,0 +1,16 @@
+# slopgrid
+
+> Create your own AI model benchmark: generate multiple LLM outputs at once and compare them side-by-side
+
+Slopgrid uses your OpenRouter connection to compare AI-generated outputs in a two-dimensional grid. Rows and columns can compare models, prompt variations, and thinking efforts where supported. Output formats are Markdown, Image, SVG, Static website, and Chat completion, including chat templates with messages for the model to fill.
+
+New grids are private to their owner. Owners can publish grids as accessible by link or listed publicly. Link-accessible grids are not included in public grid listings. Publication cannot be reversed to private visibility.
+
+## Documentation
+
+- [Product reference](https://slopgrid.com/index.md): Capabilities, account and inference prerequisites, judging, sharing, and privacy.
+
+## Links
+
+- [Slopgrid homepage](https://slopgrid.com/): The application and publicly listed grids.
+- [Source code](https://github.com/klntsky/slopgrid): Project repository and README.

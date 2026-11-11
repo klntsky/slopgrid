@@ -24,6 +24,9 @@ export function Home() {
     <main className="home-page">
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
+        <p>
+          Generate multiple LLM outputs at once and compare them side-by-side.
+        </p>
       </div>
       <FormatPicker
         onSelect={(format) => {
@@ -75,6 +78,9 @@ export function Home() {
         page={search.publicPage}
         onPageChange={(page) => changePage("publicPage", page)}
       />
+      <p>
+        <a href="/index.md">About slopgrid</a>
+      </p>
     </main>
   );
 }

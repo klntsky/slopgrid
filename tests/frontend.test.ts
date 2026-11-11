@@ -10,13 +10,119 @@ import { createFrontendRoutes } from "../server/frontend.js";
 import type { ModelCatalog, ModelInfo } from "../server/model-catalog.js";
 import { runInNewContext } from "node:vm";
 import { createHash } from "node:crypto";
+import { parse, type DefaultTreeAdapterMap as Tree } from "parse5";
 
-test("page entries avoid stale caching while previous hashed chunks remain downloadable", async () => {
+const pagePolicies = [
+  ["/", "homepage"],
+  ["/?publicPage=2", "homepage"],
+  ["/index.html", "homepage"],
+  ["/grids", "homepage"],
+  ["/GRIDS/", "homepage"],
+  ["/create", "account"],
+  ["/settings", "account"],
+  ["/SETTINGS/", "account"],
+  ["/billing", "account"],
+  ["/my-cool-grid-1", "grid"],
+  [`/grid/${"a".repeat(48)}`, "grid"],
+] as const;
+
+function descendantElements(node: Tree["parentNode"]): Tree["element"][] {
+  const children = node.childNodes.filter(
+    (child): child is Tree["element"] => "tagName" in child,
+  );
+  return children.flatMap((child) => [child, ...descendantElements(child)]);
+}
+
+function assertPageIndexing(
+  response: Response,
+  html: string,
+  policy: "homepage" | "account" | "grid",
+) {
+  const root = parse(html).childNodes.find(
+    (node): node is Tree["element"] =>
+      "tagName" in node && node.tagName === "html",
+  )!;
+  const head = root.childNodes.find(
+    (node): node is Tree["element"] =>
+      "tagName" in node && node.tagName === "head",
+  )!;
+  const elements = head.childNodes.filter(
+    (node): node is Tree["element"] => "tagName" in node,
+  );
+  const tags = (tagName: string, attribute: string, value: string) =>
+    elements
+      .filter(
+        (node) =>
+          node.tagName === tagName &&
+          node.attrs.some(
+            (attr) =>
+              attr.name === attribute && attr.value.split(/\s+/).includes(value),
+          ),
+      )
+      .map((node) =>
+        Object.fromEntries(node.attrs.map((attr) => [attr.name, attr.value])),
+      );
+  const homepage = policy === "homepage";
+  assert.deepEqual(
+    tags("link", "rel", "canonical").map((tag) => tag.href),
+    homepage ? ["https://slopgrid.com/"] : [],
+  );
+  assert.deepEqual(
+    tags("meta", "property", "og:url").map((tag) => tag.content),
+    homepage ? ["https://slopgrid.com/"] : [],
+  );
+  for (const [rel, type, href] of [
+    ["describedby", "text/plain", "/llms.txt"],
+    ["alternate", "text/markdown", "/index.md"],
+  ]) {
+    assert.deepEqual(
+      tags("link", "rel", rel).map((tag) => ({
+        type: tag.type,
+        href: tag.href,
+      })),
+      homepage ? [{ type, href }] : [],
+    );
+  }
+  assert.equal(
+    response.headers.get("x-robots-tag"),
+    policy === "account" ? "noindex, nofollow" : null,
+  );
+  assert.equal(
+    tags("meta", "name", "robots").some((tag) =>
+      tag.content.toLowerCase().split(/[\s,]+/).includes("noindex"),
+    ),
+    false,
+  );
+  const app = descendantElements(root).find(
+    (node) =>
+      node.tagName === "div" &&
+      node.attrs.some((attr) => attr.name === "id" && attr.value === "root"),
+  );
+  assert.ok(app);
+  const content = descendantElements(app);
+  assert.equal(
+    content.filter((node) => node.tagName === "main").length,
+    homepage ? 1 : 0,
+  );
+  if (homepage) {
+    assert.ok(
+      content.some(
+        (node) =>
+          node.tagName === "a" &&
+          node.attrs.some(
+            (attr) => attr.name === "href" && attr.value === "/index.md",
+          ),
+      ),
+    );
+  } else assert.equal(app.childNodes.length, 0);
+}
+
+test("page entries apply route-specific indexing and avoid stale caching while previous hashed chunks remain downloadable", async () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-frontend-"));
   mkdirSync(join(directory, "assets"));
   writeFileSync(
     join(directory, "index.html"),
-    "<!doctype html><title>Current build</title>",
+    '<!doctype html><html><head><title>Current build</title></head><body><div id="root"></div></body></html>',
   );
   writeFileSync(
     join(directory, "assets", "markdown-previous.js"),
@@ -33,20 +139,13 @@ test("page entries avoid stale caching while previous hashed chunks remain downl
   await once(server, "listening");
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    for (const path of [
-      "/",
-      "/create",
-      "/index.html",
-      "/grids",
-      "/settings",
-      "/billing",
-      "/my-cool-grid-1",
-      `/grid/${"a".repeat(48)}`,
-    ]) {
+    for (const [path, policy] of pagePolicies) {
       const response = await fetch(origin + path);
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("cache-control"), "no-store");
-      assert.match(await response.text(), /Current build/);
+      const html = await response.text();
+      assert.match(html, /Current build/);
+      assertPageIndexing(response, html, policy);
     }
     for (const path of [
       "/nohyphen",
@@ -119,7 +218,6 @@ test("page HTML contains the complete model dump before rendering and updates fr
     for (const path of ["/", "/index.html", "/settings", "/grids"]) {
       const response = await fetch(origin + path);
       const html = await response.text();
-      assert.match(html, /<div id="root"><\/div>/);
       assert.equal((html.match(/<script/g) ?? []).length, 1);
       const script = html.match(
         /<script id="slopgrid-models">([\s\S]*?)<\/script>/,
@@ -148,7 +246,7 @@ test("page HTML contains the complete model dump before rendering and updates fr
   }
 });
 
-test("development serves live HTML through the shared frontend routes without disabling HMR scripts", async () => {
+test("development preserves route-specific indexing and serves live HTML without disabling HMR scripts", async () => {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-vite-"));
   const template = (title: string) =>
     `<!doctype html><html><head><title>${title}</title></head><body><div id="root"></div></body></html>`;
@@ -174,7 +272,7 @@ test("development serves live HTML through the shared frontend routes without di
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    for (const path of ["/", "/create", "/settings", `/grid/${"a".repeat(48)}`]) {
+    for (const [path, policy] of pagePolicies) {
       const response = await fetch(origin + path);
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("cache-control"), "no-store");
@@ -183,6 +281,7 @@ test("development serves live HTML through the shared frontend routes without di
         "default-src 'self'; script-src 'self' 'unsafe-inline'",
       );
       const html = await response.text();
+      assertPageIndexing(response, html, policy);
       assert.match(html, /First version/);
       assert.match(html, /src="\/@vite\/client"/);
       assert.match(html, /window\.__SLOPGRID_MODELS__ = \[\]/);
