@@ -1,6 +1,6 @@
 # slopgrid
 
-> Benchmark AI models without writing code or signing up with email.
+> Benchmark AI models without writing code. Bring your own key. No signup required.
 
 Slopgrid lets you build an AI benchmark in your browser with a straightforward, flexible grid interface. Choose what each row and column compares: models, prompt variations, thinking efforts, or complete input cases. Shape the layout around your benchmarking data without writing a custom evaluation script.
 
