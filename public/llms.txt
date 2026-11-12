@@ -1,16 +1,20 @@
 # slopgrid
 
-> Create your own AI model benchmark: generate multiple LLM outputs at once and compare them side-by-side
+> Benchmark AI models without writing code or signing up with email.
 
-Slopgrid uses your OpenRouter connection to compare AI-generated outputs in a two-dimensional grid. Rows and columns can compare models, prompt variations, and thinking efforts where supported. Output formats are Markdown, Image, SVG, Static website, and Chat completion, including chat templates with messages for the model to fill.
+Slopgrid lets you build an AI benchmark in your browser with a straightforward, flexible grid interface. Choose what each row and column compares: models, prompt variations, thinking efforts, or complete input cases. Shape the layout around your benchmarking data without writing a custom evaluation script.
 
-New grids are private to their owner. Owners can publish grids as accessible by link or listed publicly. Link-accessible grids are not included in public grid listings. Publication cannot be reversed to private visibility.
+Generate images, SVGs, Markdown, entire conversations, and complete static websites as benchmark outputs. Chat templates let models fill missing messages in a supplied conversation. Compare the generated work side-by-side.
 
-## Documentation
+Use an LLM judge with criteria you choose to turn raw model outputs into scores and row and column charts. Judging supports Markdown, Image, SVG, and Chat completion outputs. Static websites support generation and comparison, but not LLM judging.
 
-- [Product reference](https://slopgrid.com/index.md): Capabilities, account and inference prerequisites, judging, sharing, and privacy.
+No Slopgrid email signup is required. GitHub sign-in is optional. Connect your OpenRouter account for generation; OpenRouter bills your account directly. Grids start private. Published benchmarks can be shared by link or listed publicly for others to discover and fork.
+
+## Product overview
+
+- [Why use slopgrid](https://slopgrid.com/index.md): No-code benchmarking, flexible layouts, generated images and websites, conversation templates, and criteria-based charts.
 
 ## Links
 
-- [Slopgrid homepage](https://slopgrid.com/): The application and publicly listed grids.
+- [Create your AI benchmark](https://slopgrid.com/): Start a comparison or explore publicly listed benchmarks.
 - [Source code](https://github.com/klntsky/slopgrid): Project repository and README.

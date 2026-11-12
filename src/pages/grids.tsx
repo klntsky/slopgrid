@@ -25,7 +25,12 @@ export function Home() {
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
         <p>
-          Generate multiple LLM outputs at once and compare them side-by-side.
+          No coding. No email signup. Set up a flexible comparison grid and
+          benchmark AI models side-by-side.
+        </p>
+        <p>
+          Generate images, SVGs, entire conversations, or static websites. Turn
+          judged model outputs into charts using criteria you choose.
         </p>
       </div>
       <FormatPicker

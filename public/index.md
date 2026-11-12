@@ -1,47 +1,41 @@
 # slopgrid
 
-> Create your own AI model benchmark: generate multiple LLM outputs at once and compare them side-by-side
+> Your AI benchmark, without code or email signup.
 
-Slopgrid is a browser-based application for comparing AI-generated outputs side by side using your OpenRouter account.
+Find out which AI model works for your task. Build a benchmark in your browser, compare outputs side-by-side, and turn LLM judge results into charts.
 
-## Comparisons and output formats
+## Start without coding or email signup
 
-A grid has two dimensions whose row and column meanings you choose. Comparisons can vary models, prompt variables, complete input cases, and thinking efforts where supported. Image grids can also compare image sizes, aspect ratios, quality levels, and backgrounds. Available combinations depend on model and provider capabilities.
+No scripts to write. No Slopgrid email signup form. Choose what you want to generate and set up your comparison in the browser. GitHub sign-in is optional.
 
-The supported output formats are:
+Connect your OpenRouter account when you are ready to generate. Generation uses your OpenRouter allowance, and OpenRouter bills your account directly.
 
-- Markdown, displayed as formatted text.
-- Image, generated with image-capable models.
-- SVG, displayed as vector graphics.
-- Static website, generated as a bundle of files without server-side execution.
-- Chat completion, generated from ordered chat histories or templates with messages for the model to fill.
+## Make the grid fit your benchmark
 
-Prompts and user chat messages can include image attachments. Completed outputs remain available as generation progresses. Grids support pausing and resuming unfinished generation.
+Choose what each row and column compares. Put models against prompt variations, vary thinking effort, or define complete input cases. Combine these choices in a layout that fits your benchmarking data, without writing a custom evaluation script.
 
-## Accounts and inference prerequisites
+Start with a simple comparison and add detail where you need it. Image benchmarks can also vary image sizes, aspect ratios, quality levels, and backgrounds where the models support them.
 
-Users start with an anonymous browser session. GitHub sign-in is optional and provides access to account-owned grids across signed-in browsers.
+## Generate more than text answers
 
-Generation requires an OpenRouter connection through OAuth or a manually entered API key. OpenRouter connections are browser/session-scoped, separate from GitHub identity. New inference calls require access to the selected models and sufficient OpenRouter allowance. OpenRouter bills your account directly.
+Generate images, draw SVGs, mock entire conversations, or build complete static websites as part of your benchmark. Markdown is supported too. Compare the outputs side-by-side in the same grid.
 
-## LLM judging
+Chat templates let you supply parts of a conversation and have models fill the missing messages. Static website benchmarks generate complete bundles of files, so you can compare the resulting sites. Prompts and user chat messages can include image inputs.
 
-Optional LLM judges evaluate Markdown, Image, SVG, and Chat completion outputs against yes-or-no criteria and expected answers. Judge models and thinking efforts can be compared in the grid. Results include criterion verdicts and row and column scores based on completed, valid judgments. Static website outputs do not support judging.
+## Turn raw model outputs into charts
 
-Judge calls are not counted toward the generation budget.
+Choose the criteria that matter to your benchmark and let an LLM judge score the outputs. Row and column charts show how models, prompts, and settings perform against those criteria.
 
-## Sharing and privacy
+Judging supports Markdown, Image, SVG, and Chat completion outputs. Static websites can be generated and compared, but do not support LLM judging.
 
-New grids are private and accessible only to their owner. Knowing a private grid or output URL does not grant access.
+## Keep it private or share your benchmark
 
-Owners can publish a grid as accessible by link or listed publicly. Anyone with a published grid's link can read it. Link-accessible grids are excluded from public grid listings, while publicly listed grids appear on the homepage. Publishing also shares the grid's attached images.
+Your grids start private. Publish a link to share a benchmark, or list it publicly for others to discover and fork. Forking restores the setup for a new benchmark using the other person's OpenRouter connection.
 
-Publication locks generation inputs and outputs and cannot be reversed to private visibility. Publicly listed grids cannot be demoted to link-only visibility or deleted.
-
-Published grids have copy-link and fork controls. Forking restores the grid setup as an editable draft for generation using the forking user's own OpenRouter connection.
+Publishing locks generation inputs and outputs and cannot be reversed to private visibility. Publicly listed grids cannot be deleted.
 
 ## Links
 
-- [Slopgrid homepage](https://slopgrid.com/)
-- [LLM discovery reference](https://slopgrid.com/llms.txt)
+- [Create your AI benchmark](https://slopgrid.com/)
+- [LLM discovery guide](https://slopgrid.com/llms.txt)
 - [Source code and README](https://github.com/klntsky/slopgrid)

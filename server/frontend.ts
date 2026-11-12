@@ -12,7 +12,7 @@ const homepageMetadata = `<link rel="canonical" href="https://slopgrid.com/" />
 <meta property="og:url" content="https://slopgrid.com/" />
 <link rel="describedby" type="text/plain" href="/llms.txt" />
 <link rel="alternate" type="text/markdown" href="/index.md" />`;
-const homepageContent = `<main class="home-page"><div class="page-heading"><h1>Create your own AI model benchmark</h1><p>Generate multiple LLM outputs at once and compare them side-by-side.</p></div><p><a href="/index.md">About slopgrid</a></p></main>`;
+const homepageContent = `<main class="home-page"><div class="page-heading"><h1>Create your own AI model benchmark</h1><p>No coding. No email signup. Set up a flexible comparison grid and benchmark AI models side-by-side.</p><p>Generate images, SVGs, entire conversations, or static websites. Turn judged model outputs into charts using criteria you choose.</p></div><p><a href="/index.md">About slopgrid</a></p></main>`;
 
 const frontendPaths = [
   ...homepagePaths,
