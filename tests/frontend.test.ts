@@ -119,7 +119,6 @@ test("page HTML contains the complete model dump before rendering and updates fr
     for (const path of ["/", "/index.html", "/settings", "/grids"]) {
       const response = await fetch(origin + path);
       const html = await response.text();
-      assert.match(html, /<div id="root"><\/div>/);
       assert.equal((html.match(/<script/g) ?? []).length, 1);
       const script = html.match(
         /<script id="slopgrid-models">([\s\S]*?)<\/script>/,

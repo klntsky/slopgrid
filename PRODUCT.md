@@ -6,6 +6,8 @@ This document defines Slopgrid's product behavior and user experience.
 
 1. Provide Open Graph link previews using `slopgrid` as the title and site name, the site description, and the same grid screenshot shown in the README. Use the exact site description as the preview image alt text.
 2. Provide search engines with structured metadata identifying the Slopgrid website and browser-based application as related entities. Reuse the site name, description, public URL, and application screenshot, and make the metadata available in the initial HTML.
+3. Serve a concise `/llms.txt` guide linking to the homepage and source repository. Lead with no-code use, no required email signup, straightforward setup, flexible benchmarking layouts, generation of images, SVGs, entire conversations, and static websites, and criteria-based LLM judging with charts. Keep inference prerequisites and publication rules available after the benefits.
+4. Serve `/robots.txt` with a general crawler policy that permits public pages and frontend assets and excludes API, generated-output, and offline-data paths.
 
 ## Presentation and interaction requirements
 

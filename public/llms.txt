@@ -1,0 +1,16 @@
+# slopgrid
+
+> Benchmark AI models without writing code. Bring your own key. No signup required.
+
+Slopgrid lets you build an AI benchmark in your browser with a straightforward, flexible grid interface. Choose what each row and column compares: models, prompt variations, thinking efforts, or complete input cases. Shape the layout around your benchmarking data without writing a custom evaluation script.
+
+Generate images, SVGs, Markdown, entire conversations, and complete static websites as benchmark outputs. Chat templates let models fill missing messages in a supplied conversation. Compare the generated work side-by-side.
+
+Use an LLM judge with criteria you choose to turn raw model outputs into scores and row and column charts. Judging supports Markdown, Image, SVG, and Chat completion outputs. Static websites support generation and comparison, but not LLM judging.
+
+No Slopgrid email signup is required. GitHub sign-in is optional. Connect your OpenRouter account for generation; OpenRouter bills your account directly. Grids start private. Published benchmarks can be shared by link or listed publicly for others to discover and fork.
+
+## Links
+
+- [Create your AI benchmark](https://slopgrid.com/): Start a comparison or explore publicly listed benchmarks.
+- [Source code](https://github.com/klntsky/slopgrid): Project repository and README.
