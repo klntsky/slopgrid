@@ -10,10 +10,6 @@ Use an LLM judge with criteria you choose to turn raw model outputs into scores 
 
 No Slopgrid email signup is required. GitHub sign-in is optional. Connect your OpenRouter account for generation; OpenRouter bills your account directly. Grids start private. Published benchmarks can be shared by link or listed publicly for others to discover and fork.
 
-## Product overview
-
-- [Why use slopgrid](https://slopgrid.com/index.md): No-code benchmarking, flexible layouts, generated images and websites, conversation templates, and criteria-based charts.
-
 ## Links
 
 - [Create your AI benchmark](https://slopgrid.com/): Start a comparison or explore publicly listed benchmarks.

@@ -6,17 +6,13 @@ import type { ModelCatalog, ModelInfo } from "./model-catalog.js";
 import type { GridListsBootstrap } from "./grid-bootstrap.js";
 import type { ViteDevServer } from "vite";
 
-const homepagePaths = ["/", "/index.html", "/grids"];
-const accountPaths = ["/create", "/settings", "/billing"];
-const homepageMetadata = `<link rel="canonical" href="https://slopgrid.com/" />
-<meta property="og:url" content="https://slopgrid.com/" />
-<link rel="describedby" type="text/plain" href="/llms.txt" />
-<link rel="alternate" type="text/markdown" href="/index.md" />`;
-const homepageContent = `<main class="home-page"><div class="page-heading"><h1>Create your own AI model benchmark</h1><p>No coding. No email signup. Set up a flexible comparison grid and benchmark AI models side-by-side.</p><p>Generate images, SVGs, entire conversations, or static websites. Turn judged model outputs into charts using criteria you choose.</p></div><p><a href="/index.md">About slopgrid</a></p></main>`;
-
 const frontendPaths = [
-  ...homepagePaths,
-  ...accountPaths,
+  "/",
+  "/create",
+  "/index.html",
+  "/grids",
+  "/settings",
+  "/billing",
   /^\/grid\/[a-f0-9]{48}$/,
   /^\/(?=[a-z0-9-]*-)[a-z0-9-]+$/,
 ];
@@ -92,19 +88,9 @@ export async function createFrontendRoutes(
             `script-src 'self' 'sha256-${hash}'`,
           ),
         );
-      const path = req.path.toLowerCase().replace(/\/$/, "") || "/";
-      if (accountPaths.includes(path))
-        res.set("X-Robots-Tag", "noindex, nofollow");
-      let template = vite
+      const template = vite
         ? withModels(await readFile(join(root, "index.html"), "utf8"))
         : html;
-      if (homepagePaths.includes(path))
-        template = template
-          .replace("</head>", `${homepageMetadata}</head>`)
-          .replace(
-            '<div id="root"></div>',
-            `<div id="root">${homepageContent}</div>`,
-          );
       const body = embedGridData(template, bootstrap?.(req, res), res);
       res.set("Cache-Control", "no-store");
       res.type("html").send(

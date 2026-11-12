@@ -3,5 +3,3 @@ Allow: /
 Disallow: /api/
 Disallow: /outputs/
 Disallow: /offline/
-
-Sitemap: https://slopgrid.com/sitemap.xml

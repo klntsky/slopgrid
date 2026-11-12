@@ -24,14 +24,6 @@ export function Home() {
     <main className="home-page">
       <div className="page-heading">
         <h1>Create your own AI model benchmark</h1>
-        <p>
-          No coding. No email signup. Set up a flexible comparison grid and
-          benchmark AI models side-by-side.
-        </p>
-        <p>
-          Generate images, SVGs, entire conversations, or static websites. Turn
-          judged model outputs into charts using criteria you choose.
-        </p>
       </div>
       <FormatPicker
         onSelect={(format) => {
@@ -83,9 +75,6 @@ export function Home() {
         page={search.publicPage}
         onPageChange={(page) => changePage("publicPage", page)}
       />
-      <p>
-        <a href="/index.md">About slopgrid</a>
-      </p>
     </main>
   );
 }
