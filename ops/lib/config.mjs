@@ -26,6 +26,7 @@ export function configFromEnvironment(values, root = projectRoot) {
       envFile: values[prefix + "ENV_FILE"],
       webProcess: values[prefix + "WEB_PROCESS"],
       engineProcess: values[prefix + "ENGINE_PROCESS"],
+      ...(values.OPS_STATIC_MEDIA_PATH ? { staticMediaPath: values.OPS_STATIC_MEDIA_PATH } : {}),
     };
   }
   return validateConfig(config);
@@ -93,6 +94,7 @@ export function loadDemoConfig(root = projectRoot, inherited = process.env, opti
     demo: {
       envFile, httpsPort: Number(port), stateRoot: stateRoot(values),
       githubSource,
+      ...(values.OPS_STATIC_MEDIA_PATH ? { staticMediaPath: values.OPS_STATIC_MEDIA_PATH } : {}),
       ...(stagingSource ? { stagingSource } : {}),
     },
   };

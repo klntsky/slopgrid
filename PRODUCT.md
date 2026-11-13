@@ -9,6 +9,16 @@ This document defines Slopgrid's product behavior and user experience.
 3. Serve a concise `/llms.txt` guide linking to the homepage and source repository. Lead with no-code use, no required email signup, straightforward setup, flexible benchmarking layouts, generation of images, SVGs, entire conversations, and static websites, and criteria-based LLM judging with charts. Keep inference prerequisites and publication rules available after the benefits.
 4. Serve `/robots.txt` with a general crawler policy that permits public pages and frontend assets and excludes API, generated-output, and offline-data paths.
 
+## Blog and search discovery
+
+1. Serve a public blog index at `/blog/` and complete articles at `/blog/<slug>/`. Readers can read and navigate these pages without signing in or running application JavaScript.
+2. List articles newest date first, breaking same-date ties by slug in ascending order. Show each article's title, description, and publication date, with a link to its full text.
+3. Redirect `/blog` and known article paths without a trailing slash to their canonical trailing-slash URLs with HTTP 308 for GET and HEAD. If index.html aliases are exposed, redirect them to the same canonical URLs. Return HTTP 404 for unknown or nested blog paths rather than the application frontend.
+4. Give every blog document English semantic HTML, a descriptive title, a description, a canonical URL, and Open Graph and Twitter metadata. Article headers show the title and publication time before the body. Articles include safely escaped BlogPosting structured data. Canonical URLs use the configured public origin.
+5. Give blog pages a readable responsive layout with system light and dark themes, a product wordmark linking to `/`, and Blog navigation linking to `/blog/`. Article bodies support the existing Markdown formatting while showing embedded raw HTML as text.
+6. Serve `/sitemap.xml` as XML with the homepage, blog index, and every current article's canonical URL. Escape XML values and advertise `https://slopgrid.com/sitemap.xml` in `/robots.txt`.
+7. Serve blog media from a separately configured data directory at `/blog-media/`, independently of article publication and frontend builds. Missing media can return HTTP 404 without blocking articles or startup. In blog articles only, render Markdown images pointing to `/blog-media/<filename>.mp4` as responsive native videos with controls, inline playback, metadata-only preloading, an accessible name from the image description, and a fallback link. Other image URLs and ordinary links retain their existing Markdown behavior. Keep raw HTML inert and generated-output Markdown rendering unchanged.
+
 ## Presentation and interaction requirements
 
 The following numbered requirements define the visible layout and interaction contract.
@@ -125,7 +135,7 @@ Status: high level product goal that is not a requirement (not achieved yet).
 
 ### 2.2. Navigation and page layout
 
-Show a small-text footer on every page except the grid page, with "source code" linking to https://github.com/klntsky/slopgrid and "follow @klntsky for updates", separated by a centered dot. Only "@klntsky" in the updates text links to https://twitter.com/klntsky.
+Show a small-text footer on every page except the grid page, with "source code" linking to https://github.com/klntsky/slopgrid and "follow @klntsky for updates", separated by a centered dot. Only "@klntsky" in the updates text links to https://twitter.com/klntsky. Include an ordinary "Blog" link to `/blog/`.
 
 1. The logo opens `/`, which combines output-format selection, Your grids when populated, and Public grids. Redirect `/grids` to `/`. Selecting a format opens `/create` with that format selected.
 2. Keep navbar link labels uppercase, with readable desktop text and enough space for grid information. Use matching gaps between the brand, action buttons, and title/prompt group.

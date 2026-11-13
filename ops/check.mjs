@@ -10,7 +10,11 @@ const result = spawnSync(
   {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, SLOPGRID_TEST_APP: resolve(root, "..") },
+    env: {
+      ...process.env,
+      STATIC_MEDIA_PATH: undefined,
+      SLOPGRID_TEST_APP: resolve(root, ".."),
+    },
   },
 );
 if (result.error) throw result.error;

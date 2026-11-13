@@ -105,6 +105,8 @@ export function Layout() {
         <Outlet />
         {!isGrid && (
           <footer className="site-footer">
+            <a href="/blog/">Blog</a>
+            {" · "}
             <a href="https://github.com/klntsky/slopgrid">source code</a>
             {" · "}
             follow <a href="https://twitter.com/klntsky">@klntsky</a> for

@@ -26,6 +26,7 @@ import { createModelRoutes } from "./routes/models.js";
 import { createGridRoutes } from "./routes/grids.js";
 import { createEventRoutes } from "./routes/events.js";
 import { createOutputAccess } from "./output-access.js";
+import { createBlogRoutes } from "./blog.js";
 export type Config = {
   github?: OAuthCredentials;
   sessionCookieName?: string;
@@ -34,6 +35,7 @@ export type Config = {
   database: string;
   secret: Buffer;
   outputsPath?: string;
+  staticMediaPath?: string;
   provider?: Provider;
   authURL?: string;
   generation: GenerationAPI;
@@ -78,6 +80,45 @@ export function createApp(config: Config) {
       outputAccess,
     ),
   );
+  if (config.staticMediaPath)
+    app.use(
+      "/blog-media",
+      express.static(config.staticMediaPath, {
+        dotfiles: "ignore",
+        index: false,
+        redirect: false,
+      }),
+    );
+  app.use("/blog-media", (_req, res) =>
+    res.status(404).type("text").send("Not found"),
+  );
+  app.use(
+    "/blog-media",
+    (
+      error: unknown,
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      if (
+        !(error instanceof Error) ||
+        !("status" in error) ||
+        typeof error.status !== "number" ||
+        error.status < 400 ||
+        error.status >= 500
+      )
+        return next(error);
+      if (
+        "headers" in error &&
+        error.headers &&
+        typeof error.headers === "object"
+      )
+        for (const [name, value] of Object.entries(error.headers))
+          if (typeof value === "string") res.set(name, value);
+      res.status(error.status).type("text").send("Media request failed");
+    },
+  );
+  app.use(createBlogRoutes(origin));
   app.use((req, res, next) => {
     res.set("X-Slopgrid-Cache-Scope", cacheScope(session.read(req)));
     next();
@@ -97,13 +138,9 @@ export function createApp(config: Config) {
     }),
   );
   app.use(
-    createIdentityRoutes(
-      store,
-      session,
-      rate,
-      origin.origin,
-      [githubProvider(credentials)],
-    ),
+    createIdentityRoutes(store, session, rate, origin.origin, [
+      githubProvider(credentials),
+    ]),
   );
   app.use(createManualKeyRoutes(provider, session, rate));
   app.use(createModelRoutes(modelCatalog));

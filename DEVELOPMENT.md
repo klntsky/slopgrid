@@ -70,6 +70,50 @@ Browser storage and service workers belong to an origin, so changing the port
 changes that storage origin. Cookies use the hostname rather than the port.
 Use separate browser contexts or profiles to compare independent sessions.
 
+## Editing the blog
+
+Add articles as `blog/<slug>.md`. Use lowercase letters and digits separated by
+single hyphens for the filename slug. Start each file with YAML frontmatter
+containing quoted `title`, `description`, and `date` strings:
+
+```yaml
+---
+title: "Choosing an AI model with Slopgrid"
+description: "Run the same questions across AI models and compare their answers against your team's criteria."
+date: "2026-11-12"
+---
+```
+
+Use a nonempty title and description and a real calendar date in `YYYY-MM-DD`
+format. Begin the body with an introduction and start section headings at `##`;
+the page template supplies the article's H1. The existing shared Markdown
+renderer supports GitHub Flavored Markdown and displays raw HTML as text rather
+than executing it.
+
+Keep screenshots, recordings and downloadable example data in a separate local
+Git repository, not the application repository. The configured local store is
+`~/src/slopgrid-static/`. Keep its history local without a public remote.
+Set `STATIC_MEDIA_PATH` in the ignored root `.env` for local execution and
+`OPS_STATIC_MEDIA_PATH` for deployment. The latter names the directory on the
+runtime host. Deployment does not copy media or require referenced files to exist.
+
+Reference files under `/blog-media/` with ordinary Markdown image syntax.
+Use screenshots for filled prompts and static configuration. Record interactions
+such as expanding answers and switching between verdicts and score charts.
+Embed a recording with a simple `.mp4` filename and descriptive alt text:
+
+```md
+![Review model answers, judge verdicts and scores](/blog-media/company-values-review.mp4)
+```
+
+See [blog requirements](PRODUCT.md#blog-and-search-discovery) for rendering and
+discovery behavior.
+
+Restart the web server to publish additions, edits, or removals. Startup validates
+the filenames and frontmatter and fails on malformed content. The running server
+keeps the rendered articles unchanged until its next restart. Blog publication
+needs no new CLI command.
+
 ## Builds and local tests
 
 ```sh

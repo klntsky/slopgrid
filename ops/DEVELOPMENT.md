@@ -22,6 +22,7 @@ environment variables override its values. Configure remote deployments privatel
 | `OPS_STAGING_WEB_PROCESS`, `OPS_PRODUCTION_WEB_PROCESS`           | Distinct web process names                                               |
 | `OPS_STAGING_ENGINE_PROCESS`, `OPS_PRODUCTION_ENGINE_PROCESS`     | Distinct engine process names                                            |
 | `SLOPGRID_LOCAL_TEST_ENV_FILE`                                    | Optional private local test-credential file                              |
+| `OPS_STATIC_MEDIA_PATH`                                          | Optional external blog media directory on each runtime host              |
 
 The initiating `.env` selects remote locations; each remote `runtime.env` remains
 the source of application credentials and target settings. Supply the HTTPS
@@ -33,6 +34,14 @@ The pipeline derives socket and retained-frontend locations and generates web
 and engine environment files and a process-manager definition in the target's
 configuration directory. Release pointers select web and engine code separately.
 Source archives exclude the initiating `.env` and remote credentials.
+
+`OPS_STATIC_MEDIA_PATH` passes through as `STATIC_MEDIA_PATH` to demo, staging,
+and production web runtimes. Use an absolute path available on the runtime host,
+not a path inside the application checkout. When unset, a runtime environment's
+own `STATIC_MEDIA_PATH` remains available. Media is not a build asset: deployment
+does not copy, fetch, inspect, or require the directory or its files. Missing
+media returns ordinary 404 responses. Candidate builds omit `STATIC_MEDIA_PATH`,
+and validation uses an isolated empty media location rather than host media.
 
 Both machines need Git read access to the authoritative repository. Locally,
 install Node, the application's declared pnpm version, tar, Git, and the browser
@@ -152,6 +161,7 @@ Configure these local settings in the ignored application-root `.env`:
 | `OPS_DEMO_ENV_FILE` | Absolute path to a private local demo environment file |
 | `OPS_DEMO_HTTPS_PORT` | Default unused Tailscale HTTPS listener port; overridden by `--https-port PORT` |
 | `OPS_DEMO_STATE_ROOT` | Optional absolute directory for retained demo runs |
+| `OPS_STATIC_MEDIA_PATH` | Optional external blog media directory on the local demo host |
 | `OPS_HOST` | Required staging SSH destination |
 | `OPS_NODE_PATH` | Required remote executable search path |
 | `OPS_STAGING_ENV_FILE` | Required absolute staging environment path for GitHub credentials |

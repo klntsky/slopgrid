@@ -12,13 +12,27 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { capture, fileManifest, sha256 } from "../lib/common.mjs";
 import { prepareBuild, engineFingerprint } from "../lib/artifacts.mjs";
-import { validateRemoteBuild } from "../lib/validate.mjs";
+import { validateRemoteBuild, validationEnvironment } from "../lib/validate.mjs";
+
+test("candidate validation replaces inherited and private host media paths", () => {
+  const workspace = join(tmpdir(), "candidate"),
+    runtime = join(tmpdir(), "candidate-runtime");
+  const env = validationEnvironment(
+    workspace, runtime,
+    { STATIC_MEDIA_PATH: "/private-media" },
+    { STATIC_MEDIA_PATH: "/host-media" },
+  );
+  assert.equal(env.STATIC_MEDIA_PATH, join(runtime, "blog-media"));
+});
 
 test("remote build imports the validated frontend without building it again", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "sg-import-build-"));
   const originalPath = process.env.PATH;
+  const originalStaticMediaPath = process.env.STATIC_MEDIA_PATH;
   t.after(() => {
     process.env.PATH = originalPath;
+    if (originalStaticMediaPath === undefined) delete process.env.STATIC_MEDIA_PATH;
+    else process.env.STATIC_MEDIA_PATH = originalStaticMediaPath;
     rmSync(root, { recursive: true, force: true });
   });
   const source = join(root, "source"),
@@ -72,12 +86,16 @@ test("remote build imports the validated frontend without building it again", as
     `#!${process.execPath}
 const fs = require('node:fs');
 if(process.argv[2] === '--version') console.log('fixture');
-else if(process.argv[2] === 'install') fs.symlinkSync(process.env.SLOPGRID_TEST_APP + '/node_modules', 'node_modules');
+else if(process.argv[2] === 'install') {
+  require('node:assert/strict').equal(process.env.STATIC_MEDIA_PATH, undefined);
+  fs.symlinkSync(process.env.SLOPGRID_TEST_APP + '/node_modules', 'node_modules');
+}
 else process.exit(99);
 `,
     { mode: 0o700 },
   );
   process.env.PATH = `${bin}:${originalPath}`;
+  process.env.STATIC_MEDIA_PATH = join(root, "host-media");
   const imported = await prepareBuild(request, root, true);
   assert.equal(
     readFileSync(join(imported.path, "dist/index.html"), "utf8"),

@@ -44,6 +44,7 @@ export function environment(target) {
     ),
     GENERATION_SOCKET: join(target.state, "generation.sock"),
     FRONTEND_PATH: join(target.state, "frontend"),
+    ...(target.staticMediaPath ? { STATIC_MEDIA_PATH: target.staticMediaPath } : {}),
   };
   if (
     !env.APP_ORIGIN?.startsWith("https://") ||
