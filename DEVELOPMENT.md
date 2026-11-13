@@ -103,7 +103,7 @@ such as expanding answers and switching between verdicts and score charts.
 Embed a recording with a simple `.mp4` filename and descriptive alt text:
 
 ```md
-![Review model answers, judge verdicts and scores](/blog-media/company-values-review.mp4)
+![Review model answers, judge verdicts and scores](/blog-media/pay-policy-review.mp4)
 ```
 
 See [blog requirements](PRODUCT.md#blog-and-search-discovery) for rendering and
