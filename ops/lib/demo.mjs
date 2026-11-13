@@ -132,6 +132,9 @@ function readDemoEnvironment(request, origin) {
   return {
     OUTPUT_DOMAIN: original.OUTPUT_DOMAIN,
     PORT: String(validPort(original.PORT ?? "0", "backend")),
+    ...(request.config.demo.staticMediaPath || original.STATIC_MEDIA_PATH
+      ? { STATIC_MEDIA_PATH: request.config.demo.staticMediaPath || original.STATIC_MEDIA_PATH }
+      : {}),
   };
 }
 

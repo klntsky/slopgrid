@@ -63,6 +63,7 @@ export function validationEnvironment(
     GENERATION_SOCKET: join(runtime, "generation.sock"),
     PM2_HOME: join(runtime, "pm2"),
     FRONTEND_PATH: join(workspace, "dist"),
+    STATIC_MEDIA_PATH: join(runtime, "blog-media"),
     PORT: "0",
     E2E_PORT: "0",
     APP_ORIGIN: "http://127.0.0.1",

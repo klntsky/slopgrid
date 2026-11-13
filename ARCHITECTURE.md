@@ -36,6 +36,21 @@ Deployment orchestration belongs to [ops/](ops/ARCHITECTURE.md). The development
 launcher owns only its development runtime; neither it nor application request
 handlers own release promotion.
 
+Blog content belongs to source control, separate from generated artifacts and
+user-owned grids. At startup, the web process validates the source Markdown and
+renders immutable HTML for the blog index and articles. The shared Markdown
+renderer defines the body-rendering boundary and treats raw HTML as text, while
+the blog document renderer owns metadata and structured-data escaping. Blog
+requests read the prepared responses without database access, sessions, or user
+state.
+
+Blog media belongs to a separately managed data repository. The web process
+serves its public files on the application origin without involving sessions or
+grid storage. Static-file routing confines requests to that directory and keeps
+hidden repository metadata private. The blog renderer recognizes local recordings
+and permits same-origin playback through its content security policy. Deployment
+supplies the directory location but does not own or validate the media contents.
+
 ## State and persistence
 
 The database owns identities, sessions, account favorites, grid configuration,

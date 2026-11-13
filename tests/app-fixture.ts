@@ -14,7 +14,9 @@ import { seedTestDatabase } from "./database-fixture.js";
 
 export async function appFixture(
   t: TestContext,
-  options: Pick<Config, "provider"> & { workersMax?: number } = {},
+  options: Pick<Config, "provider" | "staticMediaPath"> & {
+    workersMax?: number;
+  } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "slopgrid-test-"));
   const database = join(directory, "db.sqlite"),

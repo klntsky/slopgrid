@@ -42,6 +42,7 @@ const generation = generationClient(config.socket);
 await generation.status();
 const { app, modelCatalog, store, session } = createApp({
   authURL: process.env.OPENROUTER_AUTH_URL,
+  staticMediaPath: process.env.STATIC_MEDIA_PATH,
   origin,
   outputDomain,
   ...config,

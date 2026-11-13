@@ -64,7 +64,8 @@ export async function prepareBuild(request, run, imported = false) {
     throw new Error(
       `Configure pnpm ${expectedPnpm ?? "from packageManager"} on the host before deploying`,
     );
-  command("pnpm", ["install", "--frozen-lockfile"], { cwd: candidate });
+  const env = { ...process.env, STATIC_MEDIA_PATH: undefined };
+  command("pnpm", ["install", "--frozen-lockfile"], { cwd: candidate, env });
   if (imported) {
     const frontend = join(run, "frontend.tar.gz");
     command("tar", ["-xzf", frontend, "-C", candidate]);
@@ -81,7 +82,7 @@ export async function prepareBuild(request, run, imported = false) {
       throw new Error("Local build engine fingerprint mismatch");
     return { path: candidate, manifest: result };
   }
-  command("pnpm", ["build"], { cwd: candidate });
+  command("pnpm", ["build"], { cwd: candidate, env });
   verifyManifest(candidate, source);
   const result = {
     revision,
@@ -125,7 +126,10 @@ export function prepareRelease(target, build, request, run) {
   const pending = release + "-" + request.id;
   mkdirSync(pending, { recursive: true, mode: 0o700 });
   command("tar", ["-xzf", join(run, "source.tar.gz"), "-C", pending]);
-  command("pnpm", ["install", "--frozen-lockfile"], { cwd: pending });
+  command("pnpm", ["install", "--frozen-lockfile"], {
+    cwd: pending,
+    env: { ...process.env, STATIC_MEDIA_PATH: undefined },
+  });
   cpSync(join(build.path, "dist"), join(pending, "dist"), { recursive: true });
   verifyManifest(pending, build.manifest.source);
   writeJSON(join(pending, "release.json"), {

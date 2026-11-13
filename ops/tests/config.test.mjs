@@ -11,9 +11,11 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { parseEnv } from "node:util";
 import { capture } from "../lib/common.mjs";
 import { configFromEnvironment, loadConfig, loadDemoConfig } from "../lib/config.mjs";
 import { fixtureConfig, fixtureEnvironment } from "./config-fixture.mjs";
+import { environment, configureProcesses } from "../lib/runtime.mjs";
 
 function directory(t) {
   const path = mkdtempSync(join(tmpdir(), "slopgrid-ops-config-"));
@@ -54,6 +56,45 @@ test("root dotenv values are literal and process environment overrides them", (t
     changed.targets.production.envFile,
     config.targets.production.envFile,
   );
+});
+
+test("optional external media config reaches demos and both remote web environments", (t) => {
+  const root = directory(t);
+  const values = {
+    ...fixtureEnvironment(fixtureConfig(root)),
+    HOME: root,
+    OPS_DEMO_ENV_FILE: join(root, "demo.env"),
+    OPS_DEMO_HTTPS_PORT: "8443",
+  };
+  assert.equal(loadDemoConfig(root, values).demo.staticMediaPath, undefined);
+  const staticMediaPath = join(root, "external media $() missing");
+  writeFileSync(join(root, ".env"), Object.entries({
+    ...values, OPS_STATIC_MEDIA_PATH: staticMediaPath,
+  }).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n"));
+  const config = loadConfig(root, {});
+  assert.equal(loadDemoConfig(root, {}).demo.staticMediaPath, staticMediaPath);
+  const override = join(root, "override");
+  assert.equal(loadDemoConfig(root, { OPS_STATIC_MEDIA_PATH: override }).demo.staticMediaPath, override);
+  for (const [name, target] of Object.entries(config.targets)) {
+    assert.equal(target.staticMediaPath, staticMediaPath);
+    assert.equal(loadConfig(root, { OPS_STATIC_MEDIA_PATH: override }).targets[name].staticMediaPath, override);
+    mkdirSync(dirname(target.envFile), { recursive: true });
+    writeFileSync(target.envFile, [
+      "APP_ORIGIN=https://fixture.invalid", "PORT=49001",
+      "OUTPUT_DOMAIN=-output.fixture.invalid",
+      `KEY_ENCRYPTION_SECRET=${"a".repeat(64)}`,
+      "GITHUB_CLIENT_ID=fixture", "GITHUB_CLIENT_SECRET=fixture",
+      `STATIC_MEDIA_PATH=${JSON.stringify(join(root, "runtime-default"))}`,
+    ].join("\n"));
+    const env = environment(target);
+    assert.equal(env.STATIC_MEDIA_PATH, staticMediaPath);
+    configureProcesses(target, name, root, root, env, "fixture");
+    assert.equal(parseEnv(readFileSync(join(target.config, `${name}-web.env`), "utf8")).STATIC_MEDIA_PATH, staticMediaPath);
+    assert.equal(parseEnv(readFileSync(join(target.config, `${name}-engine.env`), "utf8")).STATIC_MEDIA_PATH, undefined);
+    const unset = { ...target };
+    delete unset.staticMediaPath;
+    assert.equal(environment(unset).STATIC_MEDIA_PATH, join(root, "runtime-default"));
+  }
 });
 
 test("missing root settings fail closed without an external JSON fallback", (t) => {
