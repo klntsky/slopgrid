@@ -605,6 +605,7 @@ The SVG generation prompt must require a well-formed standalone XML SVG document
 4. Temporary storage failures pause new generation while preserving accepted work and its results. This includes later provider calls within an active Chat completion; wait for billing writes before issuing another request, and allow Pause to cancel the wait. Continue automatically after recovery unless the user has paused or maintenance is underway. A storage interruption must not require manual Resume or cause duplicate provider charges.
    - Apply the same recovery to temporary failures while loading input attachments and completed artifacts for judging, preserving the current attempt without repeating provider calls.
 5. Recovery from disk-full errors is outside the supported failure-recovery scope.
+6. If web initialization fails, terminate the web process with a failure status so its supervisor can restart it. Report readiness only after initialization succeeds.
 
 ### 9.1. Progressive web app and offline navigation
 
