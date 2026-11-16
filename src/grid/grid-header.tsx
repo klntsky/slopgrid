@@ -2,6 +2,7 @@ import { CopyButton } from "../components/copy-button";
 import { gridPath } from "../../shared/grid-slug";
 import { PublishGrid } from "./publish-grid";
 import { GridTitle } from "./grid-title";
+import { gridCost } from "./cost-summary";
 import { Author } from "../components/identity";
 import { Square, Play, Pencil, GitBranch, Link2 } from "lucide-react";
 import type { ViewGrid } from "../api";
@@ -37,28 +38,11 @@ export function GridHeader({
     generations.add(cell.generationId);
     return true;
   });
-  const costs = generationCells.flatMap((cell) => {
-    const cost = cell.outputReady
-      ? cell.usage?.costUsd
-      : cell.status === "running"
-        ? cell.estimatedUsage?.costUsd
-        : undefined;
-    return cost === undefined ? [] : [cost];
-  });
-  const estimated = generationCells.some(
-    (cell) =>
-      !cell.outputReady &&
-      cell.status === "running" &&
-      cell.estimatedUsage?.costUsd !== undefined,
-  );
-  const totalCost =
-    costs.length || !generationCells.some((cell) => cell.outputReady)
-      ? costs.reduce((sum, cost) => sum + cost, 0)
-      : undefined;
-  const totalCostText =
-    totalCost === undefined
-      ? "Cost unavailable"
-      : `${estimated ? "≈" : ""}${totalUsd.format(totalCost)}`;
+  const {
+    total: totalCost,
+    text: totalCostText,
+    approximate: estimated,
+  } = gridCost(generationCells);
   const generationRunning = g.input.judge
     ? generationCells.some(
         (cell) => !cell.outputReady && cell.status === "running",
