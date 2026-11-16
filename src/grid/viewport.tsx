@@ -149,23 +149,39 @@ export function GridViewport({
       table.style.zoom = String(scale);
       table.style.setProperty("--grid-zoom", String(scale));
     }
-    function reset() {
+    function reset(preserve = false) {
       if (!viewport.clientWidth) return;
       headingWidth ||= headings.cells[0].offsetWidth;
       const touch = navigator.maxTouchPoints > 0 || touchPointer.matches;
       viewport.dataset.touch = String(touch);
+      const previous = preserve
+        ? {
+            left: viewport.scrollLeft,
+            top: viewport.scrollTop,
+            scale,
+            width: table.getBoundingClientRect().width,
+            height: table.getBoundingClientRect().height,
+          }
+        : undefined;
       pinch = undefined;
       pinching = false;
       zoom(1);
       applySizes();
-      if (touch && viewport.clientWidth)
-        zoom(
-          Math.min(
-            1,
-            viewport.clientWidth / table.getBoundingClientRect().width,
-          ),
+      if (touch && viewport.clientWidth) {
+        const fit = Math.min(
+          1,
+          viewport.clientWidth / table.getBoundingClientRect().width,
         );
-      viewport.scrollLeft = viewport.scrollTop = 0;
+        zoom(previous ? Math.min(3, Math.max(fit, previous.scale)) : fit);
+      }
+      if (!previous || !previous.width || !previous.height) {
+        viewport.scrollLeft = viewport.scrollTop = 0;
+        return;
+      }
+      // Keep the same part of the grid in view when the layout changes size.
+      const { width, height } = table.getBoundingClientRect();
+      viewport.scrollLeft = (previous.left * width) / previous.width;
+      viewport.scrollTop = (previous.top * height) / previous.height;
     }
     function resize(axis: Axis, index: number, size: number) {
       sizes ??= measure();
@@ -316,7 +332,7 @@ export function GridViewport({
       if (!e.touches.length) pinching = false;
     }
     reset();
-    const observer = new ResizeObserver(reset),
+    const observer = new ResizeObserver(() => reset(true)),
       events = new AbortController();
     observer.observe(viewport);
     const options = { signal: events.signal };
@@ -339,7 +355,7 @@ export function GridViewport({
     });
     for (const name of ["touchend", "touchcancel"] as const)
       viewport.addEventListener(name, touchEnd, { ...options, passive: false });
-    touchPointer.addEventListener("change", reset, options);
+    touchPointer.addEventListener("change", () => reset(), options);
     return () => {
       observer.disconnect();
       events.abort();
