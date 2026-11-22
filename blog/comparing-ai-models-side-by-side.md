@@ -1,16 +1,18 @@
 ---
-title: "Compare AI models side by side with Slopgrid"
-description: "A hands-on Slopgrid demo using real answers to a pay-policy question, with screenshots and recorded setup steps."
+title: "Compare AI models in Slopgrid before trusting the score"
+description: "A real Slopgrid comparison shows why one answer and a matching score can hide a changed recommendation or an unsupported assumption."
 date: "2026-11-13"
 ---
 
-Two engineers do the same work from different countries. Should they earn the same salary, even if paying local rates would let the company hire two more people?
+Imagine you're choosing a model for an assistant that helps managers review people-policy proposals. You need advice that fits the company's priorities and gives reasons a manager can check.
 
-Imagine you're choosing a model for an assistant that helps managers review people-policy proposals. A polished recommendation can still favor a policy the company would reject. In this Slopgrid demo, we'll compare real answers and costs, then inspect what the scores miss before choosing what to test next.
+We asked four models about one pay-policy tradeoff in Slopgrid. One model changed its recommendation between two versions of the question. Its first answer also matched the company's preferred policy while making an assumption the question never established.
 
 The company and figures are hypothetical. The model responses are real.
 
-## A question worth comparing
+## The question puts two ideas of fairness in conflict
+
+Two engineers do the same work from different countries. Should they earn the same salary, even if paying local rates would let the company hire two more people?
 
 Both engineers have the same role, level, and performance. Both pay policies are lawful, competitive locally, and affordable without pay cuts or layoffs.
 
@@ -21,11 +23,11 @@ A uses local market position as its standard of fairness. B uses equal cash pay 
 
 Companies make different choices here. [GitLab uses local labor-market pay](https://handbook.gitlab.com/handbook/total-rewards/compensation/). [Buffer has described its goal of location-independent salaries](https://buffer.com/resources/location-independent-salaries/).
 
-Our example company prefers worldwide pay. For this first comparison, we keep that preference out of the prompts. Following an explicit policy is a separate test.
+Our example company prefers worldwide pay. We keep that preference out of the model prompts and ask a separate AI judge to check each final choice against it. A match earns a point. Following explicit company instructions is a separate test.
 
-## Four models, two different choices
+## The second answer changes Opus's result
 
-We asked twice, swapping A and B in the second version. Opus answered B both times, changing its recommendation from worldwide to local-market pay. Stopping after one row would have made it look like a match.
+We asked twice, swapping A and B in the second version. Claude Opus 5.5 answered B both times, changing its recommendation from worldwide to local-market pay. Stopping after one row would have made it look like a match. Two replies don't establish why it changed.
 
 | Model | Recommendations | Cost for two answers, US cents |
 | --- | --- | --- |
@@ -40,15 +42,25 @@ In the reversed row, Opus favors the extra jobs. Sol says, "I would prioritize e
 
 [![The options-reversed row in Slopgrid. Claude Opus 5.5 recommends local-market pay, while GPT-6.1 Sol recommends worldwide pay.](/blog-media/pay-policy-comparison.webp)](/blog-media/pay-policy-comparison.webp)
 
-Haiku and Sol lead on this question. Both matched the company's preference twice, and Haiku was cheaper.
-
 These eight responses show a difference on one question. We're scoring agreement with our chosen policy. A company that prefers local-market pay would want the opposite answers.
 
-To follow along, you'll need an [OpenRouter account](https://openrouter.ai/) with credit. Use **Connect OpenRouter** in Slopgrid to link it before generating. We used a **$0.40 generation limit per cell**. Judge charges are extra and don't count toward that limit.
+## A matching choice can rest on an unsupported assumption
 
-## Build the comparison that caught it
+Opus's first answer chose worldwide pay, matching our company preference. It called the cost of two fewer junior hires "real but limited and recoverable." The question never establishes that those hires can be made later.
 
-Use one row per version of the question and one column per model. The second row lets us see Opus's changed recommendation instead of relying on its first answer.
+That assumption makes the cost of worldwide pay easier to accept. We'd ask for support before using it to justify the decision. The judge still counted the answer as a match because our criterion asks only about the final choice.
+
+This is why the answers matter alongside the scores. In Slopgrid, **Outputs** shows each answer in its conversation. **Judge results** explains each verdict, while **Benchmark results** combines both rows and gives Opus one match out of two. We can check both what changed and what the score leaves out.
+
+![Reviewing the actual model answers, judge verdicts, and benchmark results in Slopgrid.](/blog-media/pay-policy-review.mp4)
+
+## Reproduce the comparison in Slopgrid
+
+You'll need an [OpenRouter account](https://openrouter.ai/) with credit. Use **Connect OpenRouter** in Slopgrid to link it before generating. We used a **$0.40 generation limit per cell**. Judge charges are extra and don't count toward that limit.
+
+### Two rows check the recommendation twice
+
+Use one row per version of the question and one column per model. Reading across a row compares models. Reading down a column compares the same model's two answers.
 
 Choose **Chat completion**. Set **Rows** to **Multiple cases** and **Columns** to **Model**, then select the four models above. Leave **Thinking effort** at **Model default**.
 
@@ -62,7 +74,7 @@ Name the rows **Original order** and **Options reversed**. Copy the [original qu
 
 The question downloads contain only the text to paste into `$QUESTION`. The recorded answers and billing stay in the separate evidence download.
 
-## Give every model the same facts
+### Each model gets the same conversation
 
 Copy the [shared system message](/blog-media/pay-policy-system.txt) into a **system** message. It asks for one choice, a brief reason, and a final answer letter.
 
@@ -72,7 +84,7 @@ Add a **user** message containing `$QUESTION`, followed by an **unfilled** messa
 
 Slopgrid sends that conversation to each model, filling in the question from the row. Keep `$PREFERRED` out of the chat so it cannot steer the recommendation.
 
-## Let a judge count the matches
+### The judge turns choices into scores
 
 Now count the matches. The judge checks only whether the last assistant answer chose the preferred letter for its row.
 
@@ -88,14 +100,8 @@ YES means the final letter matches `$PREFERRED`. A different, missing, or ambigu
 
 Set **Budget limit per cell** to **$0.40**, then choose **Generate**. The two rows and four models produce eight answers, each with a judge verdict.
 
-## Read the reasoning behind the score
+## Test the policy before choosing a model
 
-Open the first Opus answer in **Outputs**. It matches the company's preference, yet calls the lost junior hires "recoverable." The question never says those jobs can be recovered later. We'd ask for support for that assumption before using the recommendation.
-
-In **Judge results**, that answer counts as a match despite the assumption. **Benchmark results** combines both rows, putting Opus at one match out of two. Switch back to **Outputs** whenever a score needs a closer look.
-
-![Reviewing the actual model answers, judge verdicts, and benchmark results in Slopgrid.](/blog-media/pay-policy-review.mp4)
-
-The grid gave us a shortlist and a warning. Haiku and Sol matched this preference twice, with Haiku costing less. Opus showed why one answer wasn't enough. We'd now compare Haiku and Sol with the company policy included before choosing one for a pilot.
+For this assistant, we'd next compare Haiku and Sol with the company's pay policy included. Both matched our preference in these two answers, and Haiku cost less. We'd inspect whether their recommendations and reasoning hold up before choosing one for a pilot.
 
 [Build your own comparison in Slopgrid](/).
