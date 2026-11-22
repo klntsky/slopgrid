@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Answers about Slopgrid's AI benchmarks, supported outputs, OpenRouter, LLM judging, and grid privacy." />
+    <link rel="canonical" href="https://slopgrid.com/faq" />
+    <link rel="icon" type="image/svg+xml" href="/slopgrid.svg" />
+    <title>Slopgrid FAQ</title>
+    <style>
+      :root {
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color-scheme: light;
+        color: #39352e;
+        background: #eeeae2;
+        --line: #d1cabd;
+        --muted: #837967;
+        --accent: #67583f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          color: #e8e5df;
+          background: #191817;
+          --line: #45423e;
+          --muted: #b0aba2;
+          --accent: #b5a181;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      header, main, footer { width: min(100% - 40px, 760px); margin: auto; }
+      header { padding: 32px 0; }
+      header a { font-size: 24px; font-weight: 600; text-decoration: none; }
+      a { color: var(--accent); text-underline-offset: 3px; }
+      a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      main { padding: 32px 0; }
+      h1 { font-size: 48px; font-weight: 500; letter-spacing: -2px; line-height: 1.12; margin: 0 0 40px; }
+      section { border-top: 1px solid var(--line); padding: 28px 0; }
+      h2 { font-size: 19px; font-weight: 500; line-height: 1.4; margin: 0 0 12px; }
+      p { font-size: 16px; line-height: 1.7; margin: 0; }
+      footer { border-top: 1px solid var(--line); padding: 24px 0 40px; display: flex; flex-wrap: wrap; gap: 24px; font-size: 14px; }
+      footer a { color: var(--muted); }
+      @media (max-width: 700px) {
+        header { padding: 24px 0; }
+        main { padding-top: 20px; }
+        h1 { font-size: 38px; letter-spacing: -1.5px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header><a href="/">slopgrid</a></header>
+    <main itemscope itemtype="https://schema.org/FAQPage" itemid="https://slopgrid.com/faq">
+      <link itemprop="isPartOf" href="https://slopgrid.com/#website" />
+      <link itemprop="about" href="https://slopgrid.com/#application" />
+      <h1 itemprop="name">Questions about Slopgrid</h1>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">What is Slopgrid?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">Slopgrid is a browser-based tool for building your own AI model benchmarks without writing code. Generate multiple model outputs at once and compare them side by side in a grid.</p>
+        </div>
+      </section>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">What can I compare in a Slopgrid benchmark?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">Choose what each row and column compares, including AI models, thinking efforts, prompt variations, or complete input cases. Image benchmarks also support image sizes, aspect ratios, quality levels, and backgrounds.</p>
+        </div>
+      </section>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">What types of AI output does Slopgrid support?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">Slopgrid supports Markdown, images, SVG, static websites, and chat completions. Chat templates let models fill missing messages in a supplied conversation.</p>
+        </div>
+      </section>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">Do I need an account to use Slopgrid?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">No Slopgrid email signup is required, and GitHub sign-in is optional. Connect your OpenRouter account to generate outputs. OpenRouter bills your account directly for inference.</p>
+        </div>
+      </section>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">Can I score model outputs with an LLM judge?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">Yes. Choose judging criteria and an LLM judge to score Markdown, Image, SVG, and Chat completion outputs, with row and column charts. Static websites support generation and comparison, but not LLM judging.</p>
+        </div>
+      </section>
+      <section itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+        <h2 itemprop="name">Are my Slopgrid benchmarks private?</h2>
+        <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+          <p itemprop="text">Grids start private. You can publish a benchmark for sharing by link or list it publicly so others can discover and fork it.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <a href="/">Create a benchmark</a>
+      <a href="https://github.com/klntsky/slopgrid">source code</a>
+    </footer>
+  </body>
+</html>

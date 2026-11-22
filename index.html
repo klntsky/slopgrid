@@ -48,7 +48,8 @@
             "url": "https://slopgrid.com/",
             "name": "slopgrid",
             "description": "Create your own AI model benchmark: generate multiple LLM outputs at once and compare them side-by-side",
-            "about": { "@id": "https://slopgrid.com/#application" }
+            "about": { "@id": "https://slopgrid.com/#application" },
+            "hasPart": { "@id": "https://slopgrid.com/faq" }
           },
           {
             "@type": "WebApplication",
@@ -57,64 +58,6 @@
             "name": "slopgrid",
             "description": "Create your own AI model benchmark: generate multiple LLM outputs at once and compare them side-by-side",
             "screenshot": "https://slopgrid.com/grid.png"
-          },
-          {
-            "@type": "FAQPage",
-            "@id": "https://slopgrid.com/#faq",
-            "url": "https://slopgrid.com/",
-            "name": "Questions about Slopgrid",
-            "isPartOf": { "@id": "https://slopgrid.com/#website" },
-            "about": { "@id": "https://slopgrid.com/#application" },
-            "mainEntity": [
-              {
-                "@type": "Question",
-                "name": "What is Slopgrid?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Slopgrid is a browser-based tool for building your own AI model benchmarks without writing code. Generate multiple model outputs at once and compare them side by side in a grid."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "What can I compare in a Slopgrid benchmark?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Choose what each row and column compares, including AI models, thinking efforts, prompt variations, or complete input cases. Image benchmarks also support image sizes, aspect ratios, quality levels, and backgrounds."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "What types of AI output does Slopgrid support?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Slopgrid supports Markdown, images, SVG, static websites, and chat completions. Chat templates let models fill missing messages in a supplied conversation."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Do I need an account to use Slopgrid?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "No Slopgrid email signup is required, and GitHub sign-in is optional. Connect your OpenRouter account to generate outputs. OpenRouter bills your account directly for inference."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Can I score model outputs with an LLM judge?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Yes. Choose judging criteria and an LLM judge to score Markdown, Image, SVG, and Chat completion outputs, with row and column charts. Static websites support generation and comparison, but not LLM judging."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Are my Slopgrid benchmarks private?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "Grids start private. You can publish a benchmark for sharing by link or list it publicly so others can discover and fork it."
-                }
-              }
-            ]
           }
         ]
       }

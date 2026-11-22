@@ -76,6 +76,10 @@ export async function createFrontendRoutes(
     await catalog.read();
     catalog.subscribe(bake);
   } else bake([]);
+  routes.get("/faq", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(join(root, vite ? "public/faq.html" : "faq.html"));
+  });
   if (vite) routes.use(vite.middlewares);
   routes.get(frontendPaths, async (req, res, next) => {
     try {

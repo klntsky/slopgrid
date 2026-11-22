@@ -13,4 +13,5 @@ No Slopgrid email signup is required. GitHub sign-in is optional. Connect your O
 ## Links
 
 - [Create your AI benchmark](https://slopgrid.com/): Start a comparison or explore publicly listed benchmarks.
+- [Questions about Slopgrid](https://slopgrid.com/faq): Answers about benchmark layouts, outputs, OpenRouter, judging, and privacy.
 - [Source code](https://github.com/klntsky/slopgrid): Project repository and README.
