@@ -2,7 +2,7 @@
   "id": "/",
   "name": "slopgrid",
   "short_name": "slopgrid",
-  "description": "Generate and compare AI outputs in a grid.",
+  "description": "Generate and compare AI outputs in a grid. Run numeric evaluations with an LLM judge.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
