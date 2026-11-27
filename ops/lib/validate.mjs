@@ -67,6 +67,10 @@ export function validationEnvironment(
     E2E_PORT: "0",
     APP_ORIGIN: "http://127.0.0.1",
     TMPDIR: runtime,
+    SLOPGRID_E2E_ARTIFACTS_DIR:
+      privateEnv.SLOPGRID_E2E_ARTIFACTS_DIR ??
+      inherited.SLOPGRID_E2E_ARTIFACTS_DIR ??
+      join(tmpdir(), "slopgrid-e2e-failures"),
     SLOPGRID_TEST_DATABASE: undefined,
     SLOPGRID_REAL_TEST_RETRIES: "2",
   };

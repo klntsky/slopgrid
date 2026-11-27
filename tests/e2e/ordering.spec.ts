@@ -94,6 +94,7 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
   context,
 }) => {
   const f = await runtimeFixture();
+  await page.clock.install();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -170,6 +171,8 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     ).toContainText("Newer thinking.");
     await expect.poll(() => request.failure()).not.toBeNull();
     expect(transport.reads).toBe(reads);
+    // Isolate the next outage from the earlier blocked stream's retry backoff.
+    await page.clock.fastForward(30000);
     // Observe every DOM commit, so a transient rollback followed by recovery fails too.
     const observations = await page.evaluateHandle(() => {
       const states: {
@@ -213,7 +216,6 @@ test("late HTTP and reconnected stream snapshots cannot roll back content, think
     // Replay an older valid snapshot on reconnection, then reconnect to the real stream.
     await kill(f.web);
     await f.startWeb();
-    // Two native EventSource reconnect delays exceed Playwright's default assertion timeout.
     await expect
       .poll(() => connections, { timeout: 10000 })
       .toBeGreaterThanOrEqual(2);

@@ -21,8 +21,12 @@ export async function webFixture(config: {
     res: Parameters<RequestListener>[1],
   ) => boolean;
 }) {
-  let backend: number;
+  let backend: number | undefined;
   const handleRequest: RequestListener = (req, res) => {
+    if (backend === undefined) {
+      res.writeHead(503, { "cache-control": "no-store" }).end();
+      return;
+    }
     if (config.intercept?.(req, res)) return;
     if (
       config.controls &&
@@ -103,10 +107,14 @@ export async function webFixture(config: {
       GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET ?? "fixture",
     },
   );
+  child.once("exit", () => {
+    backend = undefined;
+  });
   const agent = new Agent({ connect: { rejectUnauthorized: false } });
   const fetchLocal = (url: string, init?: RequestInit) =>
     fetch(url, { ...init, dispatcher: agent } as RequestInit);
   async function close() {
+    backend = undefined;
     await stopService(child);
     for (const proxy of proxies) proxy.closeAllConnections();
     await Promise.all(

@@ -16,7 +16,12 @@ export default defineConfig({
       timeout: 420000,
       use: { trace: "off", screenshot: "off", video: "off" },
     },
-    { name: "mock", testDir: "tests/e2e", fullyParallel: true },
+    {
+      name: "mock",
+      testDir: "tests/e2e",
+      fullyParallel: true,
+      use: { trace: "retain-on-failure", screenshot: "only-on-failure" },
+    },
     {
       name: "real",
       testDir: "tests/real-e2e",

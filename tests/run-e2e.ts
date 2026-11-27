@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { startTestServer } from "./test-server";
 import { parseE2EPort } from "./e2e-port";
@@ -16,11 +16,11 @@ const reuseIndex = args.indexOf("--reuse-build");
 const reuseBuild = reuseIndex >= 0;
 if (reuseBuild) args.splice(reuseIndex, 1);
 const port = parseE2EPort(process.env.E2E_PORT);
-function realKey() {
+async function realKey() {
   if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
   try {
     const config = JSON.parse(
-      readFileSync(
+      await readFile(
         join(
           process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
           "slopgrid",
@@ -29,7 +29,7 @@ function realKey() {
         "utf8",
       ),
     ) as { keySource: string; keyVariable?: string };
-    const key = parseEnv(readFileSync(config.keySource, "utf8"))[
+    const key = parseEnv(await readFile(config.keySource, "utf8"))[
       config.keyVariable ?? "OPENROUTER_API_KEY"
     ];
     if (key) return key;
@@ -45,32 +45,38 @@ if (
   throw new Error(
     "E2E requires GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in private runtime configuration.",
   );
-const key = suite === "mock" ? undefined : realKey();
+const key = suite === "mock" ? undefined : await realKey();
 async function command(
   arguments_: string[],
   env = process.env,
 ): Promise<number> {
-  return new Promise((resolve) => {
-    const child = spawn("pnpm", arguments_, { stdio: "inherit", env });
-    child.on("exit", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
-  });
+  const { promise, resolve } = Promise.withResolvers<number>();
+  const child = spawn("pnpm", arguments_, { stdio: "inherit", env });
+  child.on("exit", (code) => resolve(code ?? 1));
+  child.on("error", () => resolve(1));
+  return promise;
 }
 if (reuseBuild) {
-  if (!existsSync("dist/index.html"))
+  try {
+    await access("dist/index.html");
+  } catch {
     throw new Error("Build the app before using --reuse-build");
+  }
 } else {
   const result = await command(["build"]);
   if (result) process.exit(result);
 }
 process.env.SLOPGRID_TEST_RESOURCES = prepareTestResources();
 try {
+  const artifacts = resolve(process.env.SLOPGRID_E2E_ARTIFACTS_DIR ?? tmpdir());
+  await mkdir(artifacts, { recursive: true, mode: 0o700 });
   for (const project of suite === "all"
     ? (["mock", "real"] as const)
     : [suite as "mock" | "real" | "github"]) {
     const started = Date.now();
-    const results = mkdtempSync(join(tmpdir(), "slopgrid-e2e-results-"));
+    const results = await mkdtemp(join(artifacts, `slopgrid-e2e-${project}-`));
     let server: Awaited<ReturnType<typeof startTestServer>> | undefined;
+    let passed = false;
     try {
       // Mock tests create their own servers; real suites share one serial server.
       if (project !== "mock") {
@@ -97,10 +103,12 @@ try {
         `${project} E2E elapsed: ${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
       process.exitCode = code;
+      passed = code === 0;
       if (code) break;
     } finally {
       await server?.close();
-      rmSync(results, { recursive: true, force: true });
+      if (passed) await rm(results, { recursive: true, force: true });
+      else console.error(`Browser failure artifacts retained at ${results}`);
     }
   }
 } finally {
