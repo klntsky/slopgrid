@@ -26,6 +26,22 @@ const gridViewsSchema = z.object({
 });
 type GridViews = z.infer<typeof gridViewsSchema>;
 
+const navigationOffsets: Partial<Record<string, readonly [number, number]>> = {
+  ArrowLeft: [0, -1],
+  ArrowRight: [0, 1],
+  ArrowUp: [-1, 0],
+  ArrowDown: [1, 0],
+};
+
+function canExpand(cell: ViewGrid["cells"][number]) {
+  return (
+    cell.outputReady ||
+    cell.status === "running" ||
+    !!cell.thinkingURL ||
+    !!cell.judge
+  );
+}
+
 function readGridViews(gridId: string): GridViews {
   try {
     const saved = gridViewsSchema.safeParse(
@@ -115,10 +131,7 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
     (cell) =>
       selection?.kind === "output" &&
       cell.id === selection.id &&
-      (cell.outputReady ||
-        cell.status === "running" ||
-        !!cell.thinkingURL ||
-        !!cell.judge),
+      canExpand(cell),
   );
   const reference =
     selection?.kind === "reference"
@@ -157,10 +170,37 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       returnButton.current?.focus({ preventScroll: true });
       return;
     }
-    expandedView.current
-      ?.querySelector<HTMLButtonElement>(".markdown-expand")
-      ?.focus({ preventScroll: true });
-    function escape(event: KeyboardEvent) {
+    const button =
+      expandedView.current?.querySelector<HTMLButtonElement>(".markdown-expand");
+    if (button) {
+      if (expanded) returnButton.current = button;
+      button.focus({ preventScroll: true });
+    }
+  }, [expandedId]);
+  useLayoutEffect(() => {
+    if (!expandedId) return;
+    const element = expandedView.current;
+    function syncFrameKeyboard() {
+      for (const frame of element?.querySelectorAll("iframe") ?? [])
+        frame.contentWindow?.postMessage(
+          { type: "slopgrid:expanded", expanded: true },
+          "*",
+        );
+    }
+    syncFrameKeyboard();
+    element?.addEventListener("load", syncFrameKeyboard, true);
+    function navigate(key: string) {
+      const offset = navigationOffsets[key];
+      if (!expanded || !offset) return;
+      const next = g.cells.find(
+        (cell) =>
+          cell.row === expanded.row + offset[0] &&
+          cell.column === expanded.column + offset[1] &&
+          canExpand(cell),
+      );
+      if (next) setSelection({ kind: "output", id: next.id });
+    }
+    function keydown(event: KeyboardEvent) {
       if (
         event.key === "Escape" &&
         !event.defaultPrevented &&
@@ -168,25 +208,53 @@ export function OutputGrid({ grid: g }: { grid: ViewGrid }) {
       ) {
         event.preventDefault();
         collapse();
+        return;
       }
-    }
-    function frameEscape(event: MessageEvent) {
       if (
-        event.data?.type === "slopgrid:escape" &&
+        !expanded ||
+        !navigationOffsets[event.key] ||
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        document.querySelector("dialog[open]") ||
+        (event.target instanceof HTMLElement &&
+          (event.target.isContentEditable ||
+            event.target.closest(
+              'input, textarea, select, audio, video, [role="textbox"], [role="combobox"], [role="slider"], [role="spinbutton"], [role="listbox"], [role="menu"], [role="tree"], [role="grid"], [role="tablist"]',
+            )))
+      )
+        return;
+      event.preventDefault();
+      navigate(event.key);
+    }
+    function frameKeydown(event: MessageEvent) {
+      if (
+        (event.data?.type === "slopgrid:escape" ||
+          event.data?.type === "slopgrid:navigate") &&
         !document.querySelector("dialog[open]") &&
         [...(expandedView.current?.querySelectorAll("iframe") ?? [])].some(
           (frame) => frame.contentWindow === event.source,
         )
-      )
-        collapse();
+      ) {
+        if (event.data.type === "slopgrid:escape") collapse();
+        else if (typeof event.data.key === "string") navigate(event.data.key);
+      }
     }
-    document.addEventListener("keydown", escape);
-    window.addEventListener("message", frameEscape);
+    document.addEventListener("keydown", keydown);
+    window.addEventListener("message", frameKeydown);
     return () => {
-      document.removeEventListener("keydown", escape);
-      window.removeEventListener("message", frameEscape);
+      document.removeEventListener("keydown", keydown);
+      window.removeEventListener("message", frameKeydown);
+      element?.removeEventListener("load", syncFrameKeyboard, true);
+      for (const frame of element?.querySelectorAll("iframe") ?? [])
+        frame.contentWindow?.postMessage(
+          { type: "slopgrid:expanded", expanded: false },
+          "*",
+        );
     };
-  }, [expandedId]);
+  }, [expandedId, g.cells]);
   const title = (cell: ViewGrid["cells"][number]) => {
     const row =
       display.rows[cell.row].name ||
