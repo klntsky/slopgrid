@@ -106,6 +106,15 @@ and real-provider suites, while the GitHub suite needs registered credentials.
 
 Direct browser runs make one attempt by default. Deployment validation permits
 two retries for real-provider browser tests. Unit and mock tests do not retry.
+
+Browser runs remove successful results and retain failed results at the path
+printed by the runner. Set `SLOPGRID_E2E_ARTIFACTS_DIR` to choose the parent
+directory. Deployment validation defaults to `slopgrid-e2e-failures` under the
+initiating process's temporary directory, outside the disposable validation
+runtime. Mock browser failures retain traces and screenshots. These artifacts
+can contain private page content; inspect them locally and delete them when
+they are no longer needed.
+
 GitHub Actions is disabled; its workflow file is retained.
 
 ## GitHub integration

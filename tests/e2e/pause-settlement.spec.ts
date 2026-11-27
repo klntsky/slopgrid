@@ -165,7 +165,7 @@ test("Pause keeps live updates through reload and reconnect until every cancelle
     const unavailable = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname.endsWith("/events") &&
-        response.status() === 502,
+        response.status() === 503,
     );
     await kill(f.web);
     await unavailable;
