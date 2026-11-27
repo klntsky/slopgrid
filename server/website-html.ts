@@ -12,10 +12,22 @@ export function websiteHtml(source: string, appOrigin: string) {
     );
     if (head && "childNodes" in head) {
       // The port carries only scroll coordinates; it grants no parent DOM or cookie access.
-      const bridge = parseFragment(`<script>
+      const bridge = parseFragment(`<script>(() => {
+        let expanded = false;
+        addEventListener("message", event => {
+          if (event.source === parent && event.origin === ${JSON.stringify(appOrigin)} && event.data?.type === "slopgrid:expanded")
+            expanded = event.data.expanded === true;
+        });
         addEventListener("keydown", event => {
-          if (event.key === "Escape" && !event.defaultPrevented && parent !== window)
+          if (event.defaultPrevented || parent === window) return;
+          if (event.key === "Escape") {
             parent.postMessage({ type: "slopgrid:escape" }, ${JSON.stringify(appOrigin)});
+            return;
+          }
+          if (!expanded || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          if (document.querySelector("dialog[open]") || (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, audio, video, [role="textbox"], [role="combobox"], [role="slider"], [role="spinbutton"], [role="listbox"], [role="menu"], [role="tree"], [role="grid"], [role="tablist"]')))) return;
+          event.preventDefault();
+          parent.postMessage({ type: "slopgrid:navigate", key: event.key }, ${JSON.stringify(appOrigin)});
         });
         addEventListener("message", event => {
           if (parent === window || event.source !== parent || event.origin !== ${JSON.stringify(appOrigin)} || event.data?.type !== "slopgrid:scroll" || !event.ports[0]) return;
@@ -42,7 +54,7 @@ export function websiteHtml(source: string, appOrigin: string) {
           }
           port.close();
         });
-      </script>`).childNodes;
+      })();</script>`).childNodes;
       for (const node of bridge) node.parentNode = head;
       head.childNodes.unshift(...bridge);
     }

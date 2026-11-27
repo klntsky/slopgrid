@@ -26,6 +26,7 @@ let streamBilling = false;
 let unsafe = false;
 let markdownOutput: string | undefined;
 let websiteStreaming = false;
+let websiteOutput: string | undefined;
 let costStreaming = false;
 let textCost = 0.000123;
 let advanceWebsite: (() => void) | undefined;
@@ -337,6 +338,7 @@ upstream.post("/api/v1/chat/completions", async (req, res) => {
     : system.includes("JSON object")
       ? bundle({
           "index.html":
+            websiteOutput ??
             '<!doctype html><link rel="stylesheet" href="style.css"><h1>A generated site</h1><p id="module">Loading module...</p><script type="module" src="app.js"></script>',
           "style.css": "body { background: rgb(255, 0, 0); }",
           "app.js":
@@ -521,6 +523,7 @@ app.post("/fixture/reset", (req, res) => {
   for (const entry of [...held]) entry.release();
   aborted = [];
   websiteStreaming = !!req.body.websiteStreaming;
+  websiteOutput = req.body.websiteOutput;
   costStreaming = !!req.body.costStreaming;
   textCost = req.body.textCost ?? 0.000123;
   advanceWebsite?.();
